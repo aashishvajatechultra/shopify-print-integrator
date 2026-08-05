@@ -1,9 +1,9 @@
-FROM node:18-alpine AS base
+FROM node:18-alpine
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies (including devDependencies required for vite build)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy source
 COPY . .
@@ -17,5 +17,9 @@ RUN npm run build
 # Expose port
 EXPOSE 3000
 
+ENV PORT=3000
+ENV NODE_ENV=production
+
 # Run migrations then start
 CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]
+
