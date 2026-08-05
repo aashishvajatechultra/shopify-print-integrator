@@ -19,7 +19,8 @@ EXPOSE 3000
 
 ENV PORT=3000
 
-# Run migrations then start
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]
+# Run db push then start server
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run start"]
+
 
 
