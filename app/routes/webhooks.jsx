@@ -10,12 +10,12 @@ export const loader = async () => {
  * Verify Shopify Webhook HMAC Signature according to:
  * https://shopify.dev/docs/apps/build/webhooks/verify-deliveries#hmac-verification
  */
-function verifyHmac(rawBody, hmacHeader, secret) {
+function verifyHmac(rawBuffer, hmacHeader, secret) {
   if (!hmacHeader || !secret) return false;
   try {
     const generatedHash = crypto
       .createHmac("sha256", secret)
-      .update(rawBody, "utf8")
+      .update(rawBuffer)
       .digest("base64");
 
     const a = Buffer.from(generatedHash, "utf8");
@@ -29,8 +29,12 @@ function verifyHmac(rawBody, hmacHeader, secret) {
 }
 
 export const action = async ({ request }) => {
-  const hmacHeader = request.headers.get("x-shopify-hmac-sha256");
-  const secret = process.env.SHOPIFY_API_SECRET || "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";
+  const hmacHeader =
+    request.headers.get("x-shopify-hmac-sha256") ||
+    request.headers.get("X-Shopify-Hmac-Sha256");
+
+  const secret =
+    process.env.SHOPIFY_API_SECRET || "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";
 
   // 1. Missing HMAC header -> Reject immediately with 401
   if (!hmacHeader) {
@@ -38,22 +42,32 @@ export const action = async ({ request }) => {
     return new Response("Unauthorized: Missing HMAC header", { status: 401 });
   }
 
-  let rawBody = "";
+  let rawBuffer = null;
+  let rawText = "";
   try {
     const clonedRequest = request.clone();
-    rawBody = await clonedRequest.text();
+    const arrayBuf = await clonedRequest.arrayBuffer();
+    rawBuffer = Buffer.from(arrayBuf);
+    rawText = rawBuffer.toString("utf8");
   } catch (err) {
     console.error("[Webhook Body Read Error]:", err);
   }
 
+  if (!rawBuffer) {
+    return new Response("Bad Request", { status: 400 });
+  }
+
   // 2. Verify HMAC Signature using SHOPIFY_API_SECRET
-  const isValidHmac = verifyHmac(rawBody, hmacHeader, secret);
+  const isValidHmac =
+    verifyHmac(rawBuffer, hmacHeader, secret) ||
+    verifyHmac(Buffer.from(rawText, "utf8"), hmacHeader, secret);
 
   // Reject invalid / tampered HMAC with 401 Unauthorized
   if (!isValidHmac) {
     console.warn("[Webhook]: Invalid HMAC signature header detected. Rejecting with 401.");
     return new Response("Unauthorized: Invalid HMAC signature", { status: 401 });
   }
+
 
   // 3. Process valid webhook (Return 200 OK)
   try {
