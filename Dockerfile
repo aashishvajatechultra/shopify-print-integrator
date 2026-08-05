@@ -1,9 +1,13 @@
 FROM node:18-alpine
 WORKDIR /app
 
+# Install OpenSSL required by Prisma engine on Alpine Linux
+RUN apk add --no-cache openssl
+
 # Install all dependencies (including devDependencies required for remix/vite build)
 COPY package*.json ./
 RUN npm ci --include=dev
+
 
 # Copy source
 COPY . .
@@ -23,4 +27,4 @@ ENV PORT=3000
 CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run start"]
 
 
-
+ 
