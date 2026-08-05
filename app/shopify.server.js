@@ -142,78 +142,81 @@ const shopify = shopifyApp({
 });
 
 // Monkey patch tokenExchange to request expiring tokens
-shopify.api.auth.tokenExchange = async ({ shop, sessionToken, requestedTokenType }) => {
-  await shopify.api.session.decodeSessionToken(sessionToken);
+if (shopify?.api?.auth) {
+  shopify.api.auth.tokenExchange = async ({ shop, sessionToken, requestedTokenType }) => {
+    await shopify.api.session.decodeSessionToken(sessionToken);
 
-  const cleanShop = sanitizeShopName(shop);
+    const cleanShop = sanitizeShopName(shop);
 
-  const body = {
-    client_id: shopify.api.config.apiKey,
-    client_secret: shopify.api.config.apiSecretKey,
-    grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
-    subject_token: sessionToken,
-    subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
-    requested_token_type: requestedTokenType,
-    expiring: 1, // request expiring tokens
-  };
+    const body = {
+      client_id: shopify.api.config.apiKey,
+      client_secret: shopify.api.config.apiSecretKey,
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token: sessionToken,
+      subject_token_type: "urn:ietf:params:oauth:token-type:id_token",
+      requested_token_type: requestedTokenType,
+      expiring: 1, // request expiring tokens
+    };
 
-  const response = await fetch(`https://${cleanShop}/admin/oauth/access_token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+    const response = await fetch(`https://${cleanShop}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
-    const errBody = await response.text();
-    console.error("Token exchange request failed:", errBody);
-    throw new Error(`Token exchange failed: ${errBody}`);
-  }
-
-  const responseBody = await response.json();
-
-  const isOnline = Boolean(responseBody.associated_user);
-  const getSessionExpiration = (expires_in) => new Date(Date.now() + expires_in * 1000);
-
-  let sessionId;
-  let expires;
-  let onlineAccessInfo;
-
-  if (isOnline) {
-    const { access_token, scope, ...rest } = responseBody;
-    sessionId = shopify.api.session.getJwtSessionId(shop, `${rest.associated_user.id}`);
-    onlineAccessInfo = rest;
-    expires = getSessionExpiration(rest.expires_in);
-  } else {
-    sessionId = shopify.api.session.getOfflineId(shop);
-    if (responseBody.expires_in) {
-      expires = getSessionExpiration(responseBody.expires_in);
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error("Token exchange request failed:", errBody);
+      throw new Error(`Token exchange failed: ${errBody}`);
     }
-  }
 
-  const session = new Session({
-    id: sessionId,
-    shop: cleanShop,
-    state: "",
-    isOnline,
-    accessToken: responseBody.access_token,
-    scope: responseBody.scope,
-    expires,
-    ...(isOnline ? { onlineAccessInfo } : {}),
-  });
+    const responseBody = await response.json();
 
-  // Attach refresh token fields dynamically so our custom session storage can pick them up
-  session.refreshToken = responseBody.refresh_token || null;
-  if (responseBody.refresh_token_expires_in) {
-    session.refreshTokenExpires = new Date(Date.now() + responseBody.refresh_token_expires_in * 1000);
-  } else {
-    session.refreshTokenExpires = null;
-  }
+    const isOnline = Boolean(responseBody.associated_user);
+    const getSessionExpiration = (expires_in) => new Date(Date.now() + expires_in * 1000);
 
-  return { session };
-};
+    let sessionId;
+    let expires;
+    let onlineAccessInfo;
+
+    if (isOnline) {
+      const { access_token, scope, ...rest } = responseBody;
+      sessionId = shopify.api.session.getJwtSessionId(shop, `${rest.associated_user.id}`);
+      onlineAccessInfo = rest;
+      expires = getSessionExpiration(rest.expires_in);
+    } else {
+      sessionId = shopify.api.session.getOfflineId(shop);
+      if (responseBody.expires_in) {
+        expires = getSessionExpiration(responseBody.expires_in);
+      }
+    }
+
+    const session = new Session({
+      id: sessionId,
+      shop: cleanShop,
+      state: "",
+      isOnline,
+      accessToken: responseBody.access_token,
+      scope: responseBody.scope,
+      expires,
+      ...(isOnline ? { onlineAccessInfo } : {}),
+    });
+
+    // Attach refresh token fields dynamically so our custom session storage can pick them up
+    session.refreshToken = responseBody.refresh_token || null;
+    if (responseBody.refresh_token_expires_in) {
+      session.refreshTokenExpires = new Date(Date.now() + responseBody.refresh_token_expires_in * 1000);
+    } else {
+      session.refreshTokenExpires = null;
+    }
+
+    return { session };
+  };
+}
+
 
 export default shopify;
 export const apiVersion = ApiVersion.October24;
