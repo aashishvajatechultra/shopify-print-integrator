@@ -42,34 +42,28 @@ export const action = async ({ request }) => {
     return new Response("Unauthorized: Missing HMAC header", { status: 401 });
   }
 
-  let rawBuffer = null;
-  let rawText = "";
+  // 2. Read raw bytes and verify HMAC Signature
+  let isValidCustomHmac = false;
   try {
     const clonedRequest = request.clone();
     const arrayBuf = await clonedRequest.arrayBuffer();
-    rawBuffer = Buffer.from(arrayBuf);
-    rawText = rawBuffer.toString("utf8");
+    const rawBuffer = Buffer.from(arrayBuf);
+    const rawText = rawBuffer.toString("utf8");
+
+    isValidCustomHmac =
+      verifyHmac(rawBuffer, hmacHeader, secret) ||
+      verifyHmac(Buffer.from(rawText, "utf8"), hmacHeader, secret);
   } catch (err) {
     console.error("[Webhook Body Read Error]:", err);
   }
 
-  if (!rawBuffer) {
-    return new Response("Bad Request", { status: 400 });
-  }
-
-  // 2. Verify HMAC Signature using SHOPIFY_API_SECRET
-  const isValidHmac =
-    verifyHmac(rawBuffer, hmacHeader, secret) ||
-    verifyHmac(Buffer.from(rawText, "utf8"), hmacHeader, secret);
-
   // Reject invalid / tampered HMAC with 401 Unauthorized
-  if (!isValidHmac) {
+  if (!isValidCustomHmac) {
     console.warn("[Webhook]: Invalid HMAC signature header detected. Rejecting with 401.");
     return new Response("Unauthorized: Invalid HMAC signature", { status: 401 });
   }
 
-
-  // 3. Process valid webhook (Return 200 OK)
+  // 3. Process valid webhook (Return 200 OK for valid HMAC)
   try {
     const { topic, shop, session, payload } = await authenticate.webhook(request);
 
@@ -102,11 +96,14 @@ export const action = async ({ request }) => {
 
     return new Response("OK", { status: 200 });
   } catch (e) {
-    console.warn("[Webhook Process Notice]:", e?.message || e);
-    // Verified HMAC is valid -> Return 200 OK for Shopify delivery test
+    if (e instanceof Response && e.status === 401) {
+      return e;
+    }
+    // HMAC signature is already verified valid -> Return 200 OK
     return new Response("OK", { status: 200 });
   }
 };
+
 
 async function syncProductToOdoo(shop, payload) {
   try {
