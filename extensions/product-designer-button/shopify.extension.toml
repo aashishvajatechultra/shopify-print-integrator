@@ -1,0 +1,7 @@
+api_version = "2024-04"
+uid = "b949591a-2c16-fe9a-00e6-e2058207463c54030131"
+
+[[extensions]]
+name = "product-designer-button"
+type = "theme"
+handle = "product-designer-button"

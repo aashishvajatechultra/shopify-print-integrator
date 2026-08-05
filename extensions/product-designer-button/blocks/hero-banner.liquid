@@ -1,0 +1,126 @@
+{% schema %}
+{
+  "name": "Designer Hero Banner",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Personalize Your Products"
+    },
+    {
+      "type": "textarea",
+      "id": "description",
+      "label": "Description",
+      "default": "Create custom designs on mugs, t-shirts, caps and more with our interactive designer!"
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button Label",
+      "default": "Design Now"
+    },
+    {
+      "type": "url",
+      "id": "button_link",
+      "label": "Button Link"
+    },
+    {
+      "type": "color",
+      "id": "bg_color",
+      "label": "Card Background Color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text Color",
+      "default": "#202223"
+    },
+    {
+      "type": "color",
+      "id": "btn_bg_color",
+      "label": "Button Background Color",
+      "default": "#5c6ac4"
+    },
+    {
+      "type": "color",
+      "id": "btn_text_color",
+      "label": "Button Text Color",
+      "default": "#ffffff"
+    }
+  ]
+}
+{% endschema %}
+
+<div class="designer-hero-banner-section" style="padding: 60px 20px; text-align: center; display: flex; justify-content: center; align-items: center; width: 100%;">
+  <div class="designer-hero-card" style="
+    background: {{ block.settings.bg_color }};
+    color: {{ block.settings.text_color }};
+    padding: 40px 30px;
+    border-radius: 16px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.06);
+    max-width: 600px;
+    width: 100%;
+    border: 1px solid rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    transition: transform 0.3s ease;
+  ">
+    <h2 class="designer-hero-heading" style="
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+      color: {{ block.settings.text_color }};
+      line-height: 1.2;
+      font-family: inherit;
+    ">
+      {{ block.settings.heading }}
+    </h2>
+    <p class="designer-hero-desc" style="
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.5;
+      opacity: 0.85;
+      font-family: inherit;
+    ">
+      {{ block.settings.description }}
+    </p>
+    {% if block.settings.button_label != blank %}
+      <a href="{{ block.settings.button_link | default: '/collections/all' }}" class="designer-hero-btn" style="
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: {{ block.settings.btn_bg_color }};
+        color: {{ block.settings.btn_text_color }};
+        padding: 12px 28px;
+        font-size: 15px;
+        font-weight: 600;
+        text-decoration: none;
+        border-radius: 6px;
+        margin-top: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transition: transform 0.2s, opacity 0.2s;
+      }">
+        {{ block.settings.button_label }}
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+          <polyline points="12 5 19 12 12 19"></polyline>
+        </svg>
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.designer-hero-card:hover {
+  transform: translateY(-4px);
+}
+.designer-hero-btn:hover {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+</style>

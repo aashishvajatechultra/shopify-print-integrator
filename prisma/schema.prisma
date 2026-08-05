@@ -1,0 +1,47 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken         String?
+  refreshTokenExpires  DateTime?
+}
+
+// Stores per-shop configuration (Odoo URL, button settings)
+model ShopConfig {
+  id          String   @id @default(cuid())
+  shop        String   @unique
+  odooBaseUrl String   @default("")
+  buttonText  String   @default("Customize This Product")
+  buttonColor String   @default("#008060")
+  buttonTextColor String @default("#ffffff")
+  enabled     Boolean  @default(true)
+  odooToken        String?
+  odooAccountName  String?
+  odooAccountEmail String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

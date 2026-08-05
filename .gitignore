@@ -1,0 +1,13 @@
+node_modules/
+.env
+build/
+*.sqlite
+*.db
+.DS_Store
+.cache
+prisma/migrations/dev.db*
+dist/
+scratch_*
+*.log
+*.bak
+

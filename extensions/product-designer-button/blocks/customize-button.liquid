@@ -1,0 +1,267 @@
+{%- comment -%}
+  =========================================================
+  Odoo Product Designer Button — Theme App Extension Block
+  =========================================================
+  This block renders a "Customize" button on the product page.
+  When clicked, it redirects the customer to the Print Integrator
+  Designer with all necessary parameters:
+    - shop domain
+    - shopify product ID
+    - selected variant ID
+    - return URL (cart)
+    - customer ID (if logged in)
+
+  The button is safe to place anywhere inside a product section.
+  It dynamically updates the variant ID when the customer
+  changes a product variant (color, size, etc.) WITHOUT a page reload.
+  =========================================================
+{%- endcomment -%}
+
+{%- assign odoo_url = block.settings.odoo_base_url | default: 'https://shopify.printintegrator.com' | strip -%}
+{%- if odoo_url == blank or odoo_url == '' -%}
+  {%- assign odoo_url = 'https://shopify.printintegrator.com' -%}
+{%- endif -%}
+
+{%- comment -%} Force HTTPS: if someone saved an http:// or raw IP URL, override it {%- endcomment -%}
+{%- if odoo_url contains 'http://' -%}
+  {%- assign odoo_url = 'https://shopify.printintegrator.com' -%}
+{%- endif -%}
+
+{%- comment -%} Sanitize URL: Only remove trailing slash — do NOT replace /shop as it corrupts domain names like shopify.printintegrator.com {%- endcomment -%}
+{%- assign last_char = odoo_url | slice: -1 -%}
+{%- if last_char == '/' -%}
+  {%- assign url_len = odoo_url.size | minus: 1 -%}
+  {%- assign odoo_url = odoo_url | slice: 0, url_len -%}
+{%- endif -%}
+
+{%- assign btn_text = 'Customize Product' -%}
+{%- assign btn_bg = nil -%}
+{%- assign btn_color = nil -%}
+{%- assign show_icon = true -%}
+{%- assign btn_size = 'medium' -%}
+{%- assign open_tab = false -%}
+
+{%- if odoo_url == blank -%}
+  {%- comment -%} Show a placeholder only in the Theme Editor, not on live store {%- endcomment -%}
+  {%- if request.design_mode -%}
+    <div class="odoo-designer-placeholder" style="
+      padding: 16px;
+      border: 2px dashed #ccc;
+      border-radius: 8px;
+      text-align: center;
+      color: #888;
+      font-family: sans-serif;
+      font-size: 14px;
+    ">
+      ⚙️ <strong>Print Integrator:</strong> Please enter your Print Integrator URL in the block settings.
+    </div>
+  {%- endif -%}
+{%- else -%}
+
+  {%- comment -%} Compute return URL (Shopify cart page) {%- endcomment -%}
+  {%- assign cart_url = '/cart' -%}
+  {%- assign return_url_encoded = cart_url | url_encode -%}
+  {%- assign shop_domain = shop.permanent_domain | url_encode -%}
+
+  {%- comment -%} Current selected variant {%- endcomment -%}
+  {%- assign current_variant = product.selected_or_first_available_variant -%}
+
+  {%- comment -%} Customer ID if logged in {%- endcomment -%}
+  {%- if customer -%}
+    {%- assign customer_param = '&customer_id=' | append: customer.id -%}
+  {%- else -%}
+    {%- assign customer_param = '' -%}
+  {%- endif -%}
+
+  {%- comment -%} Build the initial designer URL {%- endcomment -%}
+  {%- capture designer_url -%}
+    {{ odoo_url }}/designer/shopify/{{ product.id }}?shop={{ shop_domain }}&variant_id={{ current_variant.id }}&return_url={{ return_url_encoded }}{{ customer_param }}
+  {%- endcapture -%}
+  {%- assign designer_url = designer_url | strip -%}
+
+  {%- comment -%} Button size styles {%- endcomment -%}
+  {%- assign btn_style_class = 'button--primary' -%}
+  {%- if block.settings.button_style == 'secondary' -%}
+    {%- assign btn_style_class = 'button--secondary' -%}
+  {%- endif -%}
+
+  <style>
+    .odoo-designer-btn-wrapper {
+      width: 100%;
+      margin: 12px 0;
+    }
+  </style>
+
+  <div
+    class="odoo-designer-btn-wrapper"
+    data-odoo-base="{{ odoo_url }}"
+    data-product-id="{{ product.id }}"
+    data-shop="{{ shop.permanent_domain }}"
+    data-return-url="{{ cart_url }}"
+    data-customer-id="{{ customer.id }}"
+    data-design-mode="{{ request.design_mode | default: false }}"
+    {{ block.shopify_attributes }}
+    style="display: none; margin: 12px 0;"
+  >
+    <a
+      id="odoo-designer-btn-{{ block.id }}"
+      href="{{ designer_url }}"
+      class="button button--full-width {{ btn_style_class }}"
+      {% if open_tab %}target="_blank" rel="noopener noreferrer"{% endif %}
+      {%- if btn_bg != blank and btn_bg != 'rgba(0,0,0,0)' %}
+      style="background-color: {{ btn_bg }}; border-color: {{ btn_bg }};{% if btn_color != blank and btn_color != 'rgba(0,0,0,0)' %} color: {{ btn_color }};{% endif %}"
+      {%- elsif btn_color != blank and btn_color != 'rgba(0,0,0,0)' %}
+      style="color: {{ btn_color }};"
+      {%- endif %}
+    >
+      {%- if show_icon -%}
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      {%- endif -%}
+      {{ btn_text }}
+    </a>
+
+    {%- comment -%}
+      This script dynamically updates the variant_id in the designer URL
+      when the customer selects a different variant (color/size etc.)
+      without needing a full page reload.
+    {%- endcomment -%}
+    <script>
+    (function() {
+      var blockId = {{ block.id | json }};
+      var btnId   = 'odoo-designer-btn-' + blockId;
+      var btn     = document.getElementById(btnId);
+      var wrapper = btn ? btn.closest('.odoo-designer-btn-wrapper') : null;
+      if (!btn || !wrapper) return;
+
+      var odooBase   = wrapper.dataset.odooBaseUrl || wrapper.getAttribute('data-odoo-base') || 'https://shopify.printintegrator.com';
+      // Safety: never use an insecure HTTP URL from a HTTPS Shopify page (causes CORS/Mixed-Content block)
+      if (odooBase && odooBase.indexOf('http://') === 0) {
+        odooBase = 'https://shopify.printintegrator.com';
+      }
+      if (odooBase) {
+        odooBase = odooBase.trim().replace(/\/+$/, "").replace(/\/shop$/, "");
+      }
+
+      var productId  = wrapper.dataset.productId;
+      var shopDomain = wrapper.dataset.shop;
+      var returnUrl  = wrapper.dataset.returnUrl;
+      var customerId = wrapper.dataset.customerId;
+      var designMode = wrapper.getAttribute('data-design-mode') === 'true';
+
+      function buildUrl(variantId) {
+        var qty = '1';
+
+        var url = odooBase + '/designer/shopify/' + productId
+          + '?shop=' + encodeURIComponent(shopDomain)
+          + '&variant_id=' + variantId
+          + '&return_url=' + encodeURIComponent(returnUrl)
+          + '&quantity=' + encodeURIComponent(qty);
+        if (customerId) url += '&customer_id=' + customerId;
+        return url;
+      }
+
+      // Update URL dynamically on click to ensure latest variant is captured
+      btn.addEventListener('click', function(e) {
+        var purchaseForm = btn.closest('form[action*="/cart/add"]') || document.querySelector('form[action*="/cart/add"]');
+        var variantInput = null;
+        if (purchaseForm) {
+          variantInput = purchaseForm.querySelector('[name="id"]:not([type="hidden"]), .product-variant-id') || purchaseForm.querySelector('[name="id"]');
+        }
+        if (!variantInput) {
+          variantInput = document.querySelector('[name="id"]:not([type="hidden"]), .product-variant-id') || document.querySelector('[name="id"]');
+        }
+        var currentVariantId = variantInput ? variantInput.value : '{{ current_variant.id }}';
+        btn.href = buildUrl(currentVariantId);
+      });
+
+      // Check if product is mapped/configurable
+      if (designMode) {
+        wrapper.style.display = 'block';
+      } else {
+        var checkUrl = odooBase + '/shopify/is_configurable?shop=' + encodeURIComponent(shopDomain) + '&shopify_product_id=' + productId;
+        console.log("[Print Integrator] Checking config via:", checkUrl);
+        var headers = {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        };
+        if (odooBase.indexOf('ngrok') !== -1) {
+          headers['ngrok-skip-browser-warning'] = '69420';
+        }
+
+        fetch(checkUrl, {
+          method: 'GET',
+          headers: headers
+        })
+        .then(function(res) { 
+          console.log("[Print Integrator] Response status:", res.status);
+          return res.json(); 
+        })
+        .then(function(data) {
+          console.log("[Print Integrator] Response data:", data);
+          if (data && data.is_configurable) {
+            wrapper.style.display = 'block';
+          } else {
+            console.warn("[Print Integrator] Not configurable. Data:", data);
+            wrapper.style.display = 'none';
+          }
+        })
+        .catch(function(err) {
+          console.error("[Print Integrator] Fetch error, hiding button:", err);
+          wrapper.style.display = 'none';
+        });
+      }
+
+      // Listen for Shopify's variant change events
+      // Works with Dawn, Debut, and most modern themes
+      document.addEventListener('change', function(e) {
+        // Standard select/radio variant picker
+        if (e.target && (e.target.name === 'id' || e.target.closest('[name="id"]'))) {
+          btn.href = buildUrl(e.target.value);
+        }
+      });
+
+      // Support for themes using custom events (e.g. Dawn's variant picker)
+      document.addEventListener('variant:change', function(e) {
+        if (e.detail && e.detail.variant && e.detail.variant.id) {
+          btn.href = buildUrl(e.detail.variant.id);
+        }
+      });
+
+      // Also listen to Shopify Section Events from newer themes
+      document.addEventListener('shopify:section:load', function() {
+        var variantInput = document.querySelector(
+          '[name="id"]:not([type="hidden"]), .product-variant-id'
+        );
+        if (variantInput && variantInput.value) {
+          btn.href = buildUrl(variantInput.value);
+        }
+      });
+    })();
+    </script>
+  </div>
+
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Product Designer Button",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Print Integrator Connection"
+    },
+    {
+      "type": "text",
+      "id": "odoo_base_url",
+      "label": "Print Integrator Base URL",
+      "info": "Your Print Integrator instance URL without trailing slash. Example: https://shopify.printintegrator.com",
+      "placeholder": "https://shopify.printintegrator.com",
+      "default": "https://shopify.printintegrator.com"
+    }
+  ]
+}
+{% endschema %}

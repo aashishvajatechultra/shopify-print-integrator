@@ -1,0 +1,697 @@
+{% schema %}
+{
+  "name": "Cart Designer Helper",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}
+<style>
+/* Modal CSS — injected in body, only affects the preview modal and cart buttons */
+.designer-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 100000;
+  display: none;
+  align-items: center;
+  justify-content: center; 
+  opacity: 0;
+  pointer-events: none; 
+  transition: opacity 0.25s ease-in-out;
+}
+
+.designer-modal.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.designer-modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);
+}
+ 
+.designer-modal-content {
+  position: relative;
+  background: white;
+  border-radius: 14px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  transform: scale(0.9);
+  transition: transform 0.25s ease-in-out;
+  overflow: hidden;
+}
+
+.designer-modal.is-active .designer-modal-content {
+  transform: scale(1);
+}
+
+.designer-modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e1e3e5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.designer-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #202223;
+  font-family: inherit;
+}
+
+.designer-modal-close-x {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #6d7175;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.designer-modal-close-x:hover {
+  color: #202223;
+}
+
+.designer-modal-body {
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f6f6f7;
+}
+
+.designer-preview-img-container {
+  width: 100%;
+  max-height: 380px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: white;
+  border: 1px solid #e1e3e5;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.02);
+}
+
+#designer-modal-img {
+  max-width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  padding: 10px;
+}
+
+.designer-modal-footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e1e3e5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.designer-button-secondary {
+  background: white;
+  border: 1px solid #babfc3;
+  color: #202223;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  min-height: auto;
+  min-width: auto;
+}
+
+.designer-button-secondary:hover {
+  background: #f6f6f7;
+  border-color: #8c9196;
+}
+
+.designer-button-primary {
+  background: #5c6ac4;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.designer-button-primary:hover {
+  background: #4f5bba;
+}
+</style>
+
+<script>
+(function() {
+  // Process URL parameters for multi-item checkout add
+  async function checkUrlParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const addDesignsData = urlParams.get('add_designs');
+    if (!addDesignsData) return;
+
+    // Show loading overlay immediately to prevent empty cart flash
+    const overlayHtml = `
+      <div id="designer-loading-overlay">
+        <style>
+          #designer-loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(8px);
+            z-index: 99999999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+          }
+          .designer-spinner {
+            width: 44px;
+            height: 44px;
+            border: 3px solid #e1e3e5;
+            border-top-color: #008060;
+            border-radius: 50%;
+            animation: designer-spin 1s linear infinite;
+            margin-bottom: 16px;
+          }
+          .designer-loading-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: #202223;
+          }
+          @keyframes designer-spin {
+            to { transform: rotate(360deg); }
+          }
+        </style>
+        <div class="designer-spinner"></div>
+        <div class="designer-loading-text">Updating your cart design...</div>
+      </div>
+    `;
+    const parentEl = document.documentElement;
+    if (parentEl) {
+      parentEl.insertAdjacentHTML('afterbegin', overlayHtml);
+    }
+    const emptyCartEl = document.querySelector('.cart--empty, .cart-empty, [id*="empty-cart"], .cart__empty-text, .cart__warnings');
+    if (emptyCartEl) {
+      emptyCartEl.style.setProperty('display', 'none', 'important');
+    }
+
+    let hasAdded = false;
+    try {
+      let payloadStr = '';
+      try {
+        let base64 = addDesignsData.replace(/ /g, '+').replace(/-/g, '+').replace(/_/g, '/');
+        const pad = base64.length % 4;
+        if (pad) {
+          if (pad === 2) { base64 += '=='; }
+          else if (pad === 3) { base64 += '='; }
+        }
+        const decoded = atob(base64);
+        try {
+          payloadStr = decodeURIComponent(escape(decoded));
+        } catch (decErr) {
+          payloadStr = decoded;
+        }
+      } catch (e) {
+        try {
+          payloadStr = decodeURIComponent(addDesignsData);
+        } catch (err2) {
+          payloadStr = addDesignsData;
+        }
+      }
+      const payload = JSON.parse(payloadStr);
+      let items = [];
+      if (payload) {
+        if (payload.items && Array.isArray(payload.items)) {
+          items = payload.items.map(item => ({
+            id: parseInt(item.id, 10),
+            quantity: parseInt(item.quantity, 10) || 1,
+            properties: item.properties || payload.properties || {}
+          }));
+        } else if (payload.id) {
+          items = [{
+            id: parseInt(payload.id, 10),
+            quantity: parseInt(payload.quantity, 10) || 1,
+            properties: payload.properties || {}
+          }];
+        }
+      }
+
+      if (items.length > 0) {
+
+        // Remove existing items from the cart with the same Design ID to prevent accumulation
+        try {
+          const cartJson = await fetchCartData(true);
+          if (cartJson && cartJson.items) { 
+            for (let itemToAdd of items) {
+              const itemToAddDesignId = itemToAdd.properties ? (itemToAdd.properties['Design ID'] || itemToAdd.properties['_Design ID'] || itemToAdd.properties['Design']) : null;
+              if (itemToAddDesignId) {
+                const cleanDesignId = String(itemToAddDesignId).replace('#', '').trim();
+                const existingItem = cartJson.items.find(cartItem => 
+                  cartItem.properties && (
+                    String(cartItem.properties['Design ID']) === cleanDesignId ||
+                    String(cartItem.properties['_Design ID']) === cleanDesignId ||
+                    String(cartItem.properties['Design']).replace('#', '').trim() === cleanDesignId
+                  )
+                );
+                if (existingItem) {
+                  await fetch('/cart/change.js', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({
+                      id: existingItem.key,
+                      quantity: 0
+                    })
+                  });
+                  await new Promise(r => setTimeout(r, 350));
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Cart Designer Helper: Failed to clean old cart items:", e);
+        }
+
+        const res = await fetch('/cart/add.js', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: JSON.stringify({ items: items })
+        });
+
+        if (res.ok) {
+          hasAdded = true;
+
+          // Poll /cart.js (max 12 × 400ms = 4.8s) until new item is confirmed
+          // in the Shopify session before reloading. This prevents the
+          // old-cart flash that happens when we reload too early.
+          let verified = false;
+          for (let attempt = 0; attempt < 12; attempt++) {
+            await new Promise(r => setTimeout(r, 400));
+            try {
+              const pollRes = await fetch('/cart.js', { cache: 'no-store' });
+              if (!pollRes.ok) continue;
+              const pollData = await pollRes.json();
+              const allVerified = items.every(item => {
+                return pollData.items.some(ci =>
+                  parseInt(ci.variant_id || ci.id, 10) === parseInt(item.id, 10)
+                );
+              });
+              if (allVerified) {
+                verified = true;
+                break;
+              }
+            } catch (pollErr) {
+              console.warn("Cart Designer Helper: Poll error:", pollErr);
+            }
+          }
+          if (!verified) {
+            console.warn("Cart Designer Helper: Poll timed out — reloading anyway.");
+          }
+        } else {
+          const errText = await res.text();
+          console.error("Cart Designer Helper: Failed to add items to cart:", errText);
+          const loaderTextEl = document.querySelector('.designer-loading-text');
+          if (loaderTextEl) {
+            loaderTextEl.innerHTML = '<span style="color: #ff4d4f; font-size: 14px;">Shopify Error: ' + errText + '</span>';
+          }
+          // Delay to let user see error
+          await new Promise(r => setTimeout(r, 6000));
+        }
+      } else {
+        console.warn("Cart Designer Helper: No items found in payload or payload invalid.", payload);
+        const loaderTextEl = document.querySelector('.designer-loading-text');
+        if (loaderTextEl) {
+          loaderTextEl.innerHTML = '<span style="color: #ff4d4f; font-size: 14px;">Error: No items found in design payload.</span>';
+        }
+        await new Promise(r => setTimeout(r, 4000));
+      }
+    } catch (err) {
+      console.error("Cart Designer Helper: Error processing add_designs parameter:", err);
+      const loaderTextEl = document.querySelector('.designer-loading-text');
+      if (loaderTextEl) {
+        loaderTextEl.innerHTML = '<span style="color: #ff4d4f; font-size: 14px;">JavaScript Error: ' + err.message + '</span>';
+      }
+      await new Promise(r => setTimeout(r, 6000));
+    } finally {
+      // Remove loading overlay
+      const overlayEl = document.getElementById('designer-loading-overlay');
+      if (overlayEl && overlayEl.parentNode) {
+        overlayEl.parentNode.removeChild(overlayEl);
+      }
+      if (hasAdded) {
+        // Clear the sessionStorage flag — next load of cart page will be normal.
+        try { sessionStorage.removeItem('designer_cart_loading'); } catch(e) {}
+        // Clean URL then reload. Session is verified so no flash will occur.
+        const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+        window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+        window.location.reload();
+      } else {
+        // Something failed — clear flag and reveal page normally.
+        try { sessionStorage.removeItem('designer_cart_loading'); } catch(e) {}
+        const emptyCartEl = document.querySelector('.cart--empty, .cart-empty, [id*="empty-cart"], .cart__empty-text, .cart__warnings');
+        if (emptyCartEl) {
+          emptyCartEl.style.removeProperty('display');
+        }
+      }
+    }
+  }
+ 
+
+  let cachedCartData = null;  
+  let fetchingPromise = null;
+
+  async function fetchCartData(force = false) {
+    if (fetchingPromise && !force) return fetchingPromise;
+    fetchingPromise = fetch('/cart.js')
+      .then(res => res.json())
+      .catch(e => {
+        console.error("Cart Designer Helper: Failed to fetch cart JSON:", e);
+        return null;
+      });
+    return fetchingPromise;
+  }
+
+  // Modal open function helper
+  window.openDesignerModal = function(previewPageUrl, editUrl) {
+    let modal = document.getElementById('designer-preview-modal');
+    if (!modal) {
+      const modalHtml = `
+        <div id="designer-preview-modal" class="designer-modal">
+          <div class="designer-modal-backdrop" onclick="closeDesignerModal()"></div>
+          <div class="designer-modal-content">
+            <div class="designer-modal-header">
+              <h3 class="designer-modal-title">Design Preview</h3>
+              <button class="designer-modal-close-x" type="button" onclick="closeDesignerModal()">&times;</button>
+            </div>
+            <div class="designer-modal-body">
+              <div class="designer-preview-img-container">
+                <img id="designer-modal-img" src="" alt="Design Preview" />
+              </div>
+            </div>
+            <div class="designer-modal-footer">
+              <button class="designer-button-secondary" type="button" onclick="closeDesignerModal()">Close</button>
+              <a id="designer-modal-edit-btn" href="#" class="designer-button-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+                Continue to Edit
+              </a>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.insertAdjacentHTML('beforeend', modalHtml);
+      modal = document.getElementById('designer-preview-modal');
+    }
+
+    // Convert confirmation page URL to raw preview image URL
+    // e.g. /design/saved/57/token/.../Preview -> /design/preview/57?token=...
+    let rawImgUrl = previewPageUrl;
+    if (previewPageUrl.includes('/design/saved/')) {
+      rawImgUrl = previewPageUrl
+        .replace('/design/saved/', '/design/preview/')
+        .replace(/\/token\/([^\/]+)\/Preview.*/i, '?token=$1');
+    }
+
+    // Append cache-busting timestamp to guarantee loading the latest edited design
+    const cacheBuster = (rawImgUrl.includes('?') ? '&' : '?') + '_cb=' + new Date().getTime();
+    document.getElementById('designer-modal-img').src = rawImgUrl + cacheBuster;
+    document.getElementById('designer-modal-edit-btn').href = editUrl;
+
+    // Show modal
+    modal.style.display = 'flex';
+    setTimeout(() => {
+      modal.classList.add('is-active');
+    }, 10);
+  };
+
+  window.closeDesignerModal = function() {
+    const modal = document.getElementById('designer-preview-modal');
+    if (modal) {
+      modal.classList.remove('is-active');
+      setTimeout(() => {
+        modal.style.display = 'none';
+      }, 250);
+    }
+  };
+
+  async function processCart() {
+    // Only process if there are un-injected design properties on screen
+    let needsProcess = false;
+    const elements = document.querySelectorAll('dd, dt, span, div, p');
+    for (let el of elements) {
+      if (el.children.length > 0) continue;
+      const text = el.textContent || '';
+      if (text.includes('Design ID:') || text.includes('Design:') || text.trim() === 'Design ID' || text.trim() === 'Design') {
+        let container = el.closest('dl, ul, div.cart-items__properties');
+        if (!container) {
+          const opt = el.closest('div.product-option');
+          if (opt) container = opt.parentElement;
+        }
+        if (!container) {
+          container = el.parentElement;
+        }
+        if (container && !container.querySelector('.designer-cart-details')) {
+          needsProcess = true;
+          break;
+        }
+      }
+    }
+
+    if (!needsProcess) return;
+
+    // Load full cart json to read hidden absolute download/preview URLs
+    const cartJson = await fetchCartData();
+    if (!cartJson || !cartJson.items) return;
+
+    elements.forEach(el => {
+      if (el.children.length > 0) return;
+
+      const text = el.textContent || '';
+      if (text.includes('Design ID:') || text.includes('Design:') || text.trim() === 'Design ID' || text.trim() === 'Design') {
+        let container = el.closest('dl, ul, div.cart-items__properties');
+        if (!container) {
+          const opt = el.closest('div.product-option');
+          if (opt) container = opt.parentElement;
+        }
+        if (!container) {
+          container = el.parentElement;
+        }
+
+        if (!container || 
+            container.tagName === 'BODY' || 
+            container.tagName === 'HTML' || 
+            container.tagName === 'FORM' || 
+            container.classList.contains('cart__items') || 
+            container.classList.contains('cart-items')) {
+          return;
+        }
+
+        if (container.querySelector('.designer-cart-details')) return;
+
+        const containerText = container.textContent || '';
+        const idMatch = containerText.match(/(?:Design ID|Design)\s*:\s*#?([^\s\n\r,]+)/i);
+        if (!idMatch) return;
+
+        const designId = idMatch[1].trim();
+
+        // Match with cart item properties (checking both visible and hidden keys)
+        const matchingItem = cartJson.items.find(item => 
+          item.properties && (
+            String(item.properties['Design ID']) === designId ||
+            String(item.properties['_Design ID']) === designId ||
+            String(item.properties['Design']) === '#' + designId ||
+            String(item.properties['Design']) === designId
+          )
+        );
+
+        if (!matchingItem || !matchingItem.properties) return;
+
+        const designToken = matchingItem.properties['Design Token'] || matchingItem.properties['_Design Token'];
+        let previewUrl = matchingItem.properties['Preview Design'] || matchingItem.properties['_Preview Design'] || matchingItem.properties['_preview_url'];
+        let downloadUrl = matchingItem.properties['_download_url'];
+
+        if (!designToken || !previewUrl || !downloadUrl) return;
+
+        // Force HTTPS for preview and download URLs if on an HTTPS page (resolves mixed content block on ngrok)
+        if (window.location.protocol === 'https:') {
+          if (previewUrl.startsWith('http:')) previewUrl = previewUrl.replace('http:', 'https:');
+          if (downloadUrl.startsWith('http:')) downloadUrl = downloadUrl.replace('http:', 'https:');
+        }
+
+        let odooBaseUrl = '';
+        try {
+          const parsedUrl = new URL(previewUrl);
+          odooBaseUrl = parsedUrl.origin;
+        } catch (e) {
+          if (previewUrl.startsWith('http')) {
+            const match = previewUrl.match(/^(https?:\/\/[^\/]+)/);
+            if (match) odooBaseUrl = match[1];
+          }
+        }
+        if (!odooBaseUrl) {
+          odooBaseUrl = window.location.origin;
+        }
+
+        const variantId = matchingItem.variant_id;
+        const shopifyProductId = matchingItem.product_id;
+        const shopDomain = '{{ shop.permanent_domain }}';
+
+        const editUrl = `${odooBaseUrl}/designer/shopify/${shopifyProductId}?shop=${shopDomain}&variant_id=${variantId || ''}&session_token=${designToken}&return_to_cart=1&quantity=1`;
+
+        // Hide original property elements safely
+        const allProps = container.querySelectorAll('*');
+        allProps.forEach(prop => {
+          if (prop === container) return;
+          const propText = (prop.textContent || '').trim();
+          if (
+            propText.includes('Design ID') ||
+            propText.includes('Design Token') ||
+            propText.includes('Preview Design') ||
+            propText.includes('/design/saved/') ||
+            propText.startsWith('Design:') ||
+            propText.startsWith('Design :')
+          ) {
+            if (prop.children.length === 0 || 
+                prop.classList.contains('product-option') || 
+                prop.classList.contains('cart-items__property') || 
+                prop.tagName === 'DIV' || 
+                prop.tagName === 'P' || 
+                prop.tagName === 'LI' || 
+                prop.tagName === 'DD' || 
+                prop.tagName === 'DT' ||
+                prop.tagName === 'SPAN') {
+              prop.style.display = 'none';
+            }
+          }
+        });
+
+        // Insert new stylized layout
+        const newHtml = `
+          <div class="designer-cart-details" style="margin-top: 8px; font-family: inherit; display: block !important;">
+            <div style="font-size: 13px; color: #555; margin-bottom: 4px;">
+              <strong>Design ID:</strong> ${designId}
+            </div>
+            <div style="font-size: 13px; color: #555; margin-bottom: 8px; display: inline-flex; align-items: center; gap: 6px;">
+              <strong>Design Token:</strong> <code style="background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 12px;">${designToken.substring(0, 8)}...</code>
+              <button class="button button--secondary" type="button" onclick="navigator.clipboard.writeText('${designToken}'); alert('Token copied!');" style="
+                background: #e1e3e5;
+                border: none;
+                border-radius: 3px;
+                padding: 2px 6px;
+                font-size: 11px;
+                cursor: pointer;
+                min-height: auto;
+                min-width: auto;
+                width: auto;
+              }">Copy</button>
+            </div>
+            <div class="designer-cart-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" onclick="window.openDesignerModal('${previewUrl}', '${editUrl}')" style="
+                display: inline-flex; 
+                align-items: center;
+                gap: 6px;
+                background: #5c6ac4;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 600;
+                text-decoration: none;
+                cursor: pointer;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+              }">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                Preview & Edit
+              </button>
+              <a href="${downloadUrl}" target="_blank" download style="
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                background: #008060;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 600;
+                text-decoration: none;
+                cursor: pointer;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+              }">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" x2="12" y1="15" y2="3"/>
+                </svg>
+                Download
+              </a>
+            </div>
+          </div>
+        `;
+        container.insertAdjacentHTML('beforeend', newHtml);
+      }
+    });
+  }
+
+  // Monitor DOM changes for dynamic cart drawers
+  const observer = new MutationObserver((mutations) => {
+    // Clear cache buster and force reload cart JSON on actual cart modifications (like item added/removed/updated)
+    const cartChanged = mutations.some(m => 
+      Array.from(m.addedNodes).some(node => 
+        node.nodeType === 1 && 
+        (node.classList.contains('cart-item') || node.classList.contains('cart-items') || node.querySelector('.cart-item'))
+      )
+    );
+    processCart(cartChanged);
+  });
+
+  // Run checkUrlParams synchronously on script evaluation to show loader instantly
+  checkUrlParams();
+
+  // Run on load and after short delay (to handle AJAX/dynamic carts)
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      processCart(true);
+    });
+  } else {
+    processCart(true);
+  }
+
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
