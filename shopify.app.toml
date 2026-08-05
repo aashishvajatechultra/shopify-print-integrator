@@ -2,7 +2,7 @@
 
 client_id = "daaee79293e54e00b9fea1ea435cf93b"
 name = "Print Integrator"
-application_url = "https://shopify-print-integrator-production.up.railway.app"
+application_url = "https://print-integrator-production.up.railway.app"
 embedded = true
 
 [build]
@@ -22,8 +22,9 @@ scopes = "read_products,read_script_tags,write_products,write_script_tags"
 
 [auth]
 redirect_urls = [
-  "https://shopify-print-integrator-production.up.railway.app/auth/callback",
-  "https://shopify-print-integrator-production.up.railway.app/api/auth"
+  "https://print-integrator-production.up.railway.app/auth/callback",
+  "https://print-integrator-production.up.railway.app/api/auth"
 ]
+
 
 
