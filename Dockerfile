@@ -18,13 +18,12 @@ RUN npx prisma generate
 # Build Remix app
 RUN npm run build
 
-# Expose port
+# Expose default port
 EXPOSE 3000
-
-ENV PORT=3000
 
 # Run db push then start server
 CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run start"]
+
 
 
  
