@@ -33,8 +33,7 @@ export const action = async ({ request }) => {
     request.headers.get("x-shopify-hmac-sha256") ||
     request.headers.get("X-Shopify-Hmac-Sha256");
 
-  const secret =
-    process.env.SHOPIFY_API_SECRET || "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";
+  const secret = process.env.SHOPIFY_API_SECRET;
 
   // 1. Missing HMAC header -> Reject immediately with 401
   if (!hmacHeader) {
