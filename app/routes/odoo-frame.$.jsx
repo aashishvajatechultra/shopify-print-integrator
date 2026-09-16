@@ -12,17 +12,19 @@ const HOP_BY_HOP = new Set([
 ]);
 
 // All Odoo path prefixes that need proxying
+// NOTE: /api is intentionally excluded — /api/designer/save carries large base64 bodies
+// and must go directly to Odoo without proxy overhead.
 const ODOO_PREFIXES = [
-  "/web", "/shopify", "/api", "/mail", "/longpolling",
+  "/web", "/shopify", "/mail", "/longpolling",
   "/bus", "/website", "/print_integrator", "/print_integrator_website",
   "/shop", "/odoo", "/discuss", "/product", "/static",
   "/roseglass_backend", "/tus_product_personalizer", "/shopify_product_designer",
-  "/shopify_product_designer_cart_extend", "/base", "/mail",
+  "/shopify_product_designer_cart_extend", "/base",
 ];
 
 const ODOO_PATHS_JSON = JSON.stringify(ODOO_PREFIXES);
 // Regex alternation for HTML rewriting
-const PATH_ALT = "web|shopify|api|mail|bus|longpolling|website|print_integrator|print_integrator_website|shop|odoo|discuss|product|static|roseglass_backend|tus_product_personalizer|shopify_product_designer|shopify_product_designer_cart_extend|base";
+const PATH_ALT = "web|shopify|mail|bus|longpolling|website|print_integrator|print_integrator_website|shop|odoo|discuss|product|static|roseglass_backend|tus_product_personalizer|shopify_product_designer|shopify_product_designer_cart_extend|base";
 
 // JS injected into HTML — patches fetch/XHR/forms/anchor clicks
 const JS_PATCH = `<script id="__odoo_proxy_patch__">
@@ -36,6 +38,8 @@ const JS_PATCH = `<script id="__odoo_proxy_patch__">
     if(url.startsWith("http://")||url.startsWith("https://")||
        url.startsWith("blob:")||url.startsWith("data:")||
        url.startsWith(PFX)) return false;
+    // Skip /api/* — these go directly to Odoo (large payloads like /api/designer/save)
+    if(url.startsWith("/api/")) return false;
     // Known Odoo path prefixes
     if(PATHS.some(function(p){
       return url===p||url.startsWith(p+"/")||url.startsWith(p+"?");
