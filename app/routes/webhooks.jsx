@@ -76,6 +76,7 @@ export const action = async ({ request }) => {
         }
         break;
 
+      case "PRODUCTS_CREATE":
       case "PRODUCTS_UPDATE":
         if (payload) {
           syncProductToOdoo(shop, payload).catch(err => {
@@ -106,11 +107,14 @@ export const action = async ({ request }) => {
 
 async function syncProductToOdoo(shop, payload) {
   try {
-    const config = await db.shopConfig.findUnique({
-      where: { shop },
-    });
+    let config = await db.shopConfig.findUnique({ where: { shop } }).catch(() => null);
 
-    if (!config?.odooBaseUrl) return;
+    // Fallback: use Railway env vars when DB is empty (SQLite ephemeral)
+    const odooBaseUrl = config?.odooBaseUrl || process.env.ODOO_BASE_URL;
+    if (!odooBaseUrl) {
+      console.warn("[Webhook Sync]: No odooBaseUrl for shop", shop, "— skipping");
+      return;
+    }
 
     const firstVariant = payload.variants?.[0];
     const mainImageUrl =
@@ -134,7 +138,7 @@ async function syncProductToOdoo(shop, payload) {
     };
 
     const odooUrl =
-      `${config.odooBaseUrl.replace(/\/$/, "")}` +
+      `${odooBaseUrl.replace(/\/$/, "")}` +
       `/api/shopify/webhook/product-sync`;
 
     await fetch(odooUrl, {
