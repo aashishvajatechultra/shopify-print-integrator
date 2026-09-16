@@ -83,7 +83,8 @@ export const loader = async ({ request }) => {
       console.log(`[TokenSync] Purged stale shpat_ session from Prisma for: ${shop}`);
       
       const authHeader = request.headers.get("Authorization") || "";
-      const sessionToken = authHeader.replace(/^Bearer\s+/i, "").strip ? authHeader.replace(/^Bearer\s+/i, "").trim() : (url.searchParams.get("id_token") || "");
+      const rawHeaderToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+      const sessionToken = rawHeaderToken || url.searchParams.get("id_token") || "";
       
       const shopifyModule = await import("../shopify.server.js");
       const shopifyAppInst = shopifyModule.default;
@@ -129,7 +130,7 @@ export const loader = async ({ request }) => {
   // ── AUTO-ONBOARD PRODUCTS FROM SHOPIFY TO ODOO ─────────────────────────────
   // Auto-fetches all products from Shopify and pushes them to Odoo on app load.
   const { autoOnboardStore } = await import("../lib/autoOnboard.server.js");
-  autoOnboardStore(session, odooBaseUrl, admin).catch(e => {
+  autoOnboardStore(activeSession, odooBaseUrl, admin).catch(e => {
     console.error("autoOnboardStore background error:", e);
   });
   // ──────────────────────────────────────────────────────────────────────────
