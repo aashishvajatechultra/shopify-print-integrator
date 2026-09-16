@@ -1,6 +1,6 @@
 const PRODUCTS_QUERY = `#graphql
-  query SyncProducts($first: Int!, $after: String) {
-    products(first: $first, after: $after) {
+  query SyncProducts($first: Int!, $after: String, $query: String) {
+    products(first: $first, after: $after, query: $query) {
       pageInfo {
         hasNextPage
         endCursor
@@ -56,7 +56,7 @@ function mapNode(node) {
 
 const SHOPIFY_API_VERSION = "2024-10";
 
-export async function fetchAllShopifyProducts(session, pageSize = 50) {
+export async function fetchAllShopifyProducts(session, pageSize = 250) {
   const { shop, accessToken } = session;
 
   console.log("\n=== DIRECT FETCH DEBUG ===");
@@ -80,7 +80,11 @@ export async function fetchAllShopifyProducts(session, pageSize = 50) {
         },
         body: JSON.stringify({
           query: PRODUCTS_QUERY.replace("#graphql", "").trim(),
-          variables: { first: pageSize, after },
+          variables: {
+            first: pageSize,
+            after,
+            query: "status:ACTIVE OR status:DRAFT OR status:ARCHIVED",
+          },
         }),
       },
     );

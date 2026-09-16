@@ -14,8 +14,8 @@
 const SHOPIFY_API_VERSION = "2024-10";
 
 const PRODUCTS_QUERY = `
-  query SyncProducts($first: Int!, $after: String) {
-    products(first: $first, after: $after) {
+  query SyncProducts($first: Int!, $after: String, $query: String) {
+    products(first: $first, after: $after, query: $query) {
       pageInfo {
         hasNextPage
         endCursor
@@ -75,17 +75,22 @@ function mapNode(node) {
 /**
  * Fetch all products from a Shopify store via GraphQL (paginates through all pages).
  */
-async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 50) {
+async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250) {
   const allProducts = [];
   let after = null;
   let hasNextPage = true;
 
   while (hasNextPage) {
     let json;
+    const queryVars = {
+      first: pageSize,
+      after,
+      query: "status:ACTIVE OR status:DRAFT OR status:ARCHIVED",
+    };
     if (admin && typeof admin.graphql === "function") {
       try {
         const resp = await admin.graphql(PRODUCTS_QUERY.trim(), {
-          variables: { first: pageSize, after },
+          variables: queryVars,
         });
         json = await resp.json();
       } catch (adminGqlErr) {
@@ -105,7 +110,7 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 50) 
           },
           body: JSON.stringify({
             query: PRODUCTS_QUERY.trim(),
-            variables: { first: pageSize, after },
+            variables: queryVars,
           }),
           signal: AbortSignal.timeout(30000),
         }
