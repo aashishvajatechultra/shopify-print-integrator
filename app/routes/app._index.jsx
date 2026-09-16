@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useLoaderData, useActionData, Form, useNavigation } from "@remix-run/react";
-import { Page, Layout, Card, TextField, Button, BlockStack, Text, Box } from "@shopify/polaris";
 import AnimatedLoader from "../components/AnimatedLoader";
 import { syncShopifyTokenToOdoo } from "../lib/odooTokenSync.server.js";
 
@@ -81,14 +80,14 @@ export const loader = async ({ request }) => {
         where: { shop },
       });
       console.log(`[TokenSync] Purged stale shpat_ session from Prisma for: ${shop}`);
-      
+
       const authHeader = request.headers.get("Authorization") || "";
       const rawHeaderToken = authHeader.replace(/^Bearer\s+/i, "").trim();
       const sessionToken = rawHeaderToken || url.searchParams.get("id_token") || "";
-      
+
       const shopifyModule = await import("../shopify.server.js");
       const shopifyAppInst = shopifyModule.default;
-      
+
       if (sessionToken && shopifyAppInst?.api?.auth?.tokenExchange) {
         const { RequestedTokenType } = await import("@shopify/shopify-api");
         const exchangeRes = await shopifyAppInst.api.auth.tokenExchange({

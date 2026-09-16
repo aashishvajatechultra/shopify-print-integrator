@@ -1,5 +1,3 @@
-import React from "react";
-
 export default function AnimatedLoader({ color = "#6366f1", size = 80 }) {
   const iconSize = Math.round(size * 0.4);
   return (
