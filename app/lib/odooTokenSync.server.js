@@ -26,7 +26,7 @@ function normalizeDomain(shop) {
  * Try the custom /api/shopify/store-token endpoint.
  * Returns true on success, false otherwise.
  */
-async function tryCustomEndpoint(odooBaseUrl, shop, accessToken, odooToken) {
+async function tryCustomEndpoint(odooBaseUrl, shop, accessToken, odooToken, refreshToken = "", tokenExpiresAt = null) {
   try {
     const url = `${odooBaseUrl.replace(/\/$/, "")}/api/shopify/store-token`;
     const resp = await fetch(url, {
@@ -40,6 +40,8 @@ async function tryCustomEndpoint(odooBaseUrl, shop, accessToken, odooToken) {
           token: odooToken || "",
           shop_domain: shop,
           access_token: accessToken,
+          refresh_token: refreshToken || "",
+          token_expires_at: tokenExpiresAt || "",
         },
       }),
       signal: AbortSignal.timeout(5000),
@@ -96,7 +98,7 @@ function parseXmlRpcBool(text) {
  * Fallback: push token via Odoo's built-in XML-RPC API.
  * Works on ANY Odoo server without custom code or restart.
  */
-async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken) {
+async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken = "", tokenExpiresAt = null) {
   const base = odooBaseUrl.replace(/\/$/, "");
   const normalized = normalizeDomain(shop);
 
@@ -158,12 +160,13 @@ async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken) {
       return false;
     }
 
-    // Step 4: Write access_token to tu.store
-    const writeText = await rpc("tu.store", "write",
-      [[storeId], { access_token: accessToken }]
-    );
+    // Step 4: Write access_token + refresh_token + expiry to tu.store
+    const writeData = { access_token: accessToken };
+    if (refreshToken) writeData.refresh_token = refreshToken;
+    if (tokenExpiresAt) writeData.token_expires_at = tokenExpiresAt;
+    const writeText = await rpc("tu.store", "write", [[storeId], writeData]);
     if (parseXmlRpcBool(writeText)) {
-      console.log(`[TokenSync] ✓ XML-RPC saved access_token to tu.store for: ${normalized}`);
+      console.log(`[TokenSync] ✓ XML-RPC saved token fields to tu.store for: ${normalized}`);
     }
 
     // Step 5: Also update shopify.store.api_key
@@ -201,13 +204,13 @@ async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken) {
  *
  * Fire-and-forget — does not block the page load.
  */
-export function syncShopifyTokenToOdoo(odooBaseUrl, shop, accessToken, odooToken = "") {
+export function syncShopifyTokenToOdoo(odooBaseUrl, shop, accessToken, odooToken = "", refreshToken = "", tokenExpiresAt = null) {
   if (!odooBaseUrl || !shop || !accessToken) return;
 
   Promise.resolve()
-    .then(() => tryCustomEndpoint(odooBaseUrl, shop, accessToken, odooToken))
+    .then(() => tryCustomEndpoint(odooBaseUrl, shop, accessToken, odooToken, refreshToken, tokenExpiresAt))
     .then((ok) => {
-      if (!ok) return tryXmlRpcFallback(odooBaseUrl, shop, accessToken);
+      if (!ok) return tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken, tokenExpiresAt);
     })
     .catch((e) => console.error("[TokenSync] Unexpected error:", e));
 }

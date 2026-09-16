@@ -71,17 +71,22 @@ export const loader = async ({ request }) => {
   }
 
   // ── AUTO-PUSH ACCESS TOKEN TO ODOO (Dynamic — works for every user) ────────
-  // Dual strategy:
-  //   1. Custom /api/shopify/store-token (fast, if new Odoo code is deployed)
-  //   2. XML-RPC fallback (always works, even on old Odoo without restart)
-  // Fire-and-forget — does not delay the page load.
+  // Also push refreshToken so Odoo can rotate the access_token on its own
+  // when it expires (Odoo runs on Contabo, Remix on Railway — no shared SQLite).
+  const tokenExpiresAt = session.expires
+    ? new Date(session.expires).toISOString()
+    : new Date(Date.now() + 60 * 60 * 1000).toISOString(); // default 1h
+
   syncShopifyTokenToOdoo(
     odooBaseUrl,
     shop,
     session.accessToken,
-    config?.odooToken || token || ""
+    config?.odooToken || token || "",
+    session.refreshToken || "",
+    tokenExpiresAt,
   );
   // ──────────────────────────────────────────────────────────────────────────
+
 
   // ── AUTO-ONBOARD PRODUCTS FROM SHOPIFY TO ODOO ─────────────────────────────
   // Auto-fetches all products from Shopify and pushes them to Odoo on app load.
