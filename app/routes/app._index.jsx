@@ -106,26 +106,25 @@ export const loader = async ({ request }) => {
     }
   }
 
-  // If still no valid token after exchange attempt, redirect to OAuth /auth flow
-  if (!activeSession?.accessToken || activeSession.accessToken.startsWith("shpat_")) {
-    console.log(`[TokenSync] No valid expiring token found for ${shop}, redirecting to /auth`);
-    return redirect(`/auth?shop=${encodeURIComponent(shop)}`);
+  // Use activeSession accessToken if present
+  const validAccessToken = activeSession?.accessToken || "";
+
+  if (validAccessToken && !validAccessToken.startsWith("shpat_")) {
+    const tokenExpiresAt = activeSession.expires
+      ? new Date(activeSession.expires).toISOString()
+      : new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    syncShopifyTokenToOdoo(
+      odooBaseUrl,
+      shop,
+      validAccessToken,
+      config?.odooToken || token || "",
+      activeSession.refreshToken || "",
+      tokenExpiresAt,
+    );
   }
 
-  const validAccessToken = activeSession.accessToken;
 
-  const tokenExpiresAt = activeSession.expires
-    ? new Date(activeSession.expires).toISOString()
-    : new Date(Date.now() + 60 * 60 * 1000).toISOString();
-
-  syncShopifyTokenToOdoo(
-    odooBaseUrl,
-    shop,
-    validAccessToken,
-    config?.odooToken || token || "",
-    activeSession.refreshToken || "",
-    tokenExpiresAt,
-  );
   // ──────────────────────────────────────────────────────────────────────────
 
 
