@@ -74,7 +74,7 @@ export const loader = async ({ request }) => {
   // when it expires (Odoo runs on Contabo, Remix on Railway — no shared SQLite).
   // ── AUTO-CLEANUP STALE NON-EXPIRING TOKENS IN PRISMA SQLITE ──────────────
   let activeSession = session;
-  if (activeSession.accessToken && activeSession.accessToken.startsWith("shpat_")) {
+  if (!activeSession?.accessToken || activeSession.accessToken.startsWith("shpat_")) {
     try {
       await prisma.session.deleteMany({
         where: { shop },
@@ -106,10 +106,13 @@ export const loader = async ({ request }) => {
     }
   }
 
-  // Prevent ever pushing a shpat_ token to Odoo
-  const validAccessToken = (activeSession.accessToken && !activeSession.accessToken.startsWith("shpat_"))
-    ? activeSession.accessToken
-    : "";
+  // If still no valid token after exchange attempt, redirect to OAuth /auth flow
+  if (!activeSession?.accessToken || activeSession.accessToken.startsWith("shpat_")) {
+    console.log(`[TokenSync] No valid expiring token found for ${shop}, redirecting to /auth`);
+    return redirect(`/auth?shop=${encodeURIComponent(shop)}`);
+  }
+
+  const validAccessToken = activeSession.accessToken;
 
   const tokenExpiresAt = activeSession.expires
     ? new Date(activeSession.expires).toISOString()
