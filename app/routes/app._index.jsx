@@ -73,12 +73,9 @@ export const loader = async ({ request }) => {
   // ── AUTO-PUSH ACCESS TOKEN TO ODOO (Dynamic — works for every user) ────────
   // Also push refreshToken so Odoo can rotate the access_token on its own
   // when it expires (Odoo runs on Contabo, Remix on Railway — no shared SQLite).
-  const tokenExpiresAt = session.expires
-    ? new Date(session.expires).toISOString()
-    : new Date(Date.now() + 60 * 60 * 1000).toISOString(); // default 1h
-
   // ── AUTO-CLEANUP STALE NON-EXPIRING TOKENS IN PRISMA SQLITE ──────────────
-  if (session.accessToken && session.accessToken.startsWith("shpat_") && !session.refreshToken) {
+  let activeSession = session;
+  if (activeSession.accessToken && activeSession.accessToken.startsWith("shpat_") && !activeSession.refreshToken) {
     try {
       await prisma.session.deleteMany({
         where: {
@@ -87,18 +84,23 @@ export const loader = async ({ request }) => {
         },
       });
       console.log(`[TokenSync] Purged stale shpat_ session from Prisma for: ${shop}`);
+      const freshAuth = await authenticate.admin(request);
+      activeSession = freshAuth.session;
     } catch (cleanErr) {
-      console.warn("[TokenSync] Session cleanup warning:", cleanErr.message);
+      console.warn("[TokenSync] Session cleanup / re-auth warning:", cleanErr.message);
     }
   }
-  // ──────────────────────────────────────────────────────────────────────────
+
+  const tokenExpiresAt = activeSession.expires
+    ? new Date(activeSession.expires).toISOString()
+    : new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
   syncShopifyTokenToOdoo(
     odooBaseUrl,
     shop,
-    session.accessToken,
+    activeSession.accessToken,
     config?.odooToken || token || "",
-    session.refreshToken || "",
+    activeSession.refreshToken || "",
     tokenExpiresAt,
   );
   // ──────────────────────────────────────────────────────────────────────────
