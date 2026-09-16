@@ -77,8 +77,15 @@ function mapNode(node) {
  */
 async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250) {
   const allProducts = [];
-  let after = null;
-  let hasNextPage = true;
+  if (!admin) {
+    try {
+      const { unauthenticated } = await import("../shopify.server.js");
+      const unauth = await unauthenticated.admin(shop);
+      admin = unauth?.admin || null;
+    } catch (unauthErr) {
+      console.warn("[AutoOnboard] unauthenticated.admin failed:", unauthErr.message);
+    }
+  }
 
   while (hasNextPage) {
     let json;
@@ -99,7 +106,7 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
       }
     }
 
-    if (!json) {
+    if (!json && accessToken && !accessToken.startsWith("shpat_")) {
       const resp = await fetch(
         `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
         {
