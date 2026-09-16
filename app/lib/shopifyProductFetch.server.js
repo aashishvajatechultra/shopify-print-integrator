@@ -168,21 +168,65 @@ export async function registerCartHelperScriptTag(session, shopifyAppUrl) {
   const { shop, accessToken } = session;
   const scriptUrl = `${shopifyAppUrl.replace(/\/$/, "")}/cart-helper.js`;
 
+  const SCRIPT_TAGS_QUERY = `#graphql
+    query GetScriptTags {
+      scriptTags(first: 50) {
+        edges {
+          node {
+            id
+            src
+          }
+        }
+      }
+    }
+  `;
+
+  const SCRIPT_TAG_DELETE_MUTATION = `#graphql
+    mutation ScriptTagDelete($id: ID!) {
+      scriptTagDelete(id: $id) {
+        deletedScriptTagId
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  const SCRIPT_TAG_CREATE_MUTATION = `#graphql
+    mutation ScriptTagCreate($input: ScriptTagInput!) {
+      scriptTagCreate(input: $input) {
+        scriptTag {
+          id
+          src
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
   try {
     // 1. Fetch existing ScriptTags
     const getResponse = await fetch(
-      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/script_tags.json`,
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       {
-        method: "GET",
+        method: "POST",
         headers: {
+          "Content-Type": "application/json",
           "X-Shopify-Access-Token": accessToken,
         },
+        body: JSON.stringify({
+          query: SCRIPT_TAGS_QUERY.replace("#graphql", "").trim(),
+        }),
       }
     );
 
     if (getResponse.ok) {
       const getJson = await getResponse.json();
-      const scriptTags = getJson.script_tags || [];
+      const scriptTags = getJson.data?.scriptTags?.edges?.map((edge) => edge.node) || [];
 
       // Delete any old/outdated ScriptTags for cart-helper.js
       for (const tag of scriptTags) {
@@ -190,12 +234,17 @@ export async function registerCartHelperScriptTag(session, shopifyAppUrl) {
           console.log("=== Deleting old/outdated ScriptTag:", tag.src, "===");
           try {
             await fetch(
-              `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/script_tags/${tag.id}.json`,
+              `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
               {
-                method: "DELETE",
+                method: "POST",
                 headers: {
+                  "Content-Type": "application/json",
                   "X-Shopify-Access-Token": accessToken,
                 },
+                body: JSON.stringify({
+                  query: SCRIPT_TAG_DELETE_MUTATION.replace("#graphql", "").trim(),
+                  variables: { id: tag.id },
+                }),
               }
             );
           } catch (delErr) {
@@ -204,7 +253,7 @@ export async function registerCartHelperScriptTag(session, shopifyAppUrl) {
         }
       }
 
-      const alreadyRegistered = scriptTags.some(tag => tag.src === scriptUrl);
+      const alreadyRegistered = scriptTags.some((tag) => tag.src === scriptUrl);
 
       if (alreadyRegistered) {
         console.log("=== Cart Helper ScriptTag is already registered ===");
@@ -215,7 +264,7 @@ export async function registerCartHelperScriptTag(session, shopifyAppUrl) {
     // 2. Register new ScriptTag
     console.log("=== Registering Cart Helper ScriptTag ===");
     const registerResponse = await fetch(
-      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/script_tags.json`,
+      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
       {
         method: "POST",
         headers: {
@@ -223,16 +272,24 @@ export async function registerCartHelperScriptTag(session, shopifyAppUrl) {
           "X-Shopify-Access-Token": accessToken,
         },
         body: JSON.stringify({
-          script_tag: {
-            event: "onload",
-            src: scriptUrl,
+          query: SCRIPT_TAG_CREATE_MUTATION.replace("#graphql", "").trim(),
+          variables: {
+            input: {
+              src: scriptUrl,
+              displayScope: "ALL",
+            },
           },
         }),
       }
     );
 
     if (registerResponse.ok) {
-      console.log("=== Cart Helper ScriptTag registered successfully ===");
+      const registerJson = await registerResponse.json();
+      if (registerJson.data?.scriptTagCreate?.userErrors?.length > 0) {
+        console.error("Failed to register ScriptTag:", registerJson.data.scriptTagCreate.userErrors);
+      } else {
+        console.log("=== Cart Helper ScriptTag registered successfully ===");
+      }
     } else {
       const errText = await registerResponse.text();
       console.error("Failed to register ScriptTag:", errText);
