@@ -16,7 +16,7 @@ export const loader = async ({ request }) => {
 
   const { json, redirect } = await import("@remix-run/node");
   const { authenticate, prisma } = await import("../shopify.server.js");
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
   const cookieHeader = request.headers.get("Cookie") || "";
@@ -91,7 +91,7 @@ export const loader = async ({ request }) => {
   // ── AUTO-ONBOARD PRODUCTS FROM SHOPIFY TO ODOO ─────────────────────────────
   // Auto-fetches all products from Shopify and pushes them to Odoo on app load.
   const { autoOnboardStore } = await import("../lib/autoOnboard.server.js");
-  autoOnboardStore(session, odooBaseUrl).catch(e => {
+  autoOnboardStore(session, odooBaseUrl, admin).catch(e => {
     console.error("autoOnboardStore background error:", e);
   });
   // ──────────────────────────────────────────────────────────────────────────

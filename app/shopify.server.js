@@ -75,9 +75,10 @@ class CustomPrismaSessionStorage extends PrismaSessionStorage {
     const session = await super.loadSession(id);
     if (!session) return undefined;
 
-    // If there's no refresh token on offline sessions, force session to be expired
-    // so that the app triggers token exchange on user activity
-    if (!session.isOnline && !session.refreshToken) {
+    // If token is a legacy non-expiring shpat_ token without a refresh token,
+    // or if offline session lacks a refresh token, force session to be expired
+    // so that @shopify/shopify-app-remix triggers fresh tokenExchange.
+    if (!session.refreshToken || (session.accessToken && session.accessToken.startsWith("shpat_") && !session.refreshToken)) {
       session.expires = new Date(0);
       return session;
     }

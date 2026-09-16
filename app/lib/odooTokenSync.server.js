@@ -140,13 +140,20 @@ async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken = 
     if (!storeId) {
       console.log(`[TokenSync] tu.store not found, attempting create for: ${normalized}`);
       try {
-        const createText = await rpc("tu.store", "create",
-          [{ name: normalized, shopify_url: normalized }]
-        );
+        // Resolve or create a merchant to associate with the store
+        const mSearchText = await rpc("tu.merchant", "search", [[[]]], { limit: 1 });
+        let merchantId = parseXmlRpcInt(mSearchText);
+        if (!merchantId) {
+          const mCreateText = await rpc("tu.merchant", "create", [{ name: `Merchant (${normalized})`, shopify_account_id: normalized }]);
+          merchantId = parseXmlRpcInt(mCreateText);
+        }
+        const createData = { name: normalized, shopify_url: normalized };
+        if (merchantId) createData.merchant_id = merchantId;
+
+        const createText = await rpc("tu.store", "create", [createData]);
         storeId = parseXmlRpcInt(createText);
       } catch (createErr) {
-        console.warn(`[TokenSync] tu.store create failed (merchant_id may be required): ${createErr.message}`);
-        // Re-search in case another process created it
+        console.warn(`[TokenSync] tu.store create fallback: ${createErr.message}`);
         const retryText = await rpc("tu.store", "search",
           [[[["shopify_url", "=", normalized]]]],
           { limit: 1 }

@@ -75,34 +75,49 @@ function mapNode(node) {
 /**
  * Fetch all products from a Shopify store via GraphQL (paginates through all pages).
  */
-async function fetchAllProducts(shop, accessToken, pageSize = 50) {
+async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 50) {
   const allProducts = [];
   let after = null;
   let hasNextPage = true;
 
   while (hasNextPage) {
-    const resp = await fetch(
-      `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": accessToken,
-        },
-        body: JSON.stringify({
-          query: PRODUCTS_QUERY.trim(),
+    let json;
+    if (admin && typeof admin.graphql === "function") {
+      try {
+        const resp = await admin.graphql(PRODUCTS_QUERY.trim(), {
           variables: { first: pageSize, after },
-        }),
-        signal: AbortSignal.timeout(30000),
+        });
+        json = await resp.json();
+      } catch (adminGqlErr) {
+        console.warn("[AutoOnboard] admin.graphql call failed, falling back to direct fetch:", adminGqlErr.message);
+        json = null;
       }
-    );
-
-    if (!resp.ok) {
-      const txt = await resp.text();
-      throw new Error(`Shopify GraphQL error (${resp.status}): ${txt.slice(0, 200)}`);
     }
 
-    const json = await resp.json();
+    if (!json) {
+      const resp = await fetch(
+        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": accessToken,
+          },
+          body: JSON.stringify({
+            query: PRODUCTS_QUERY.trim(),
+            variables: { first: pageSize, after },
+          }),
+          signal: AbortSignal.timeout(30000),
+        }
+      );
+
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`Shopify GraphQL error (${resp.status}): ${txt.slice(0, 200)}`);
+      }
+
+      json = await resp.json();
+    }
 
     if (json.errors?.length) {
       throw new Error(json.errors.map(e => e.message).join("; "));
@@ -197,10 +212,11 @@ async function persistFreshTokenToSqlite(shop, accessToken) {
  *
  * @param {object} session   - Shopify session (has .shop and .accessToken)
  * @param {string} odooBaseUrl - Production Odoo URL
+ * @param {object} [admin]    - Shopify Admin SDK client (optional)
  */
-export async function autoOnboardStore(session, odooBaseUrl) {
+export async function autoOnboardStore(session, odooBaseUrl, admin = null) {
   const { shop, accessToken } = session;
-  if (!shop || !accessToken || !odooBaseUrl) {
+  if (!shop || (!accessToken && !admin) || !odooBaseUrl) {
     console.warn("[AutoOnboard] Missing required params, skipping.");
     return;
   }
@@ -209,15 +225,15 @@ export async function autoOnboardStore(session, odooBaseUrl) {
   console.log(`[AutoOnboard] Starting onboarding for: ${shop}`);
 
   // ── Step 0: Persist the fresh token from this session into SQLite ───────────
-  // authenticate.admin() may have refreshed an expired token. Write it to the
-  // SQLite Session row so Odoo can read a valid token immediately.
-  await persistFreshTokenToSqlite(shop, accessToken);
+  if (accessToken) {
+    await persistFreshTokenToSqlite(shop, accessToken);
+  }
   // ────────────────────────────────────────────────────────────────────────────
 
   try {
     // Step 1: Fetch all products from Shopify
     console.log(`[AutoOnboard] Fetching products from Shopify for: ${shop}`);
-    const products = await fetchAllProducts(shop, accessToken);
+    const products = await fetchAllProducts(shop, accessToken, admin);
     console.log(`[AutoOnboard] Fetched ${products.length} products from Shopify.`);
 
     if (products.length === 0) {
