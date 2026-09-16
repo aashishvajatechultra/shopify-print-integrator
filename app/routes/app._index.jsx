@@ -83,6 +83,14 @@ export const loader = async ({ request }) => {
   );
   // ──────────────────────────────────────────────────────────────────────────
 
+  // ── AUTO-ONBOARD PRODUCTS FROM SHOPIFY TO ODOO ─────────────────────────────
+  // Auto-fetches all products from Shopify and pushes them to Odoo on app load.
+  const { autoOnboardStore } = await import("../lib/autoOnboard.server.js");
+  autoOnboardStore(session, odooBaseUrl).catch(e => {
+    console.error("autoOnboardStore background error:", e);
+  });
+  // ──────────────────────────────────────────────────────────────────────────
+
   let responseHeaders = null;
 
   // If redirecting from Odoo with a token, set cookies & save to DB
