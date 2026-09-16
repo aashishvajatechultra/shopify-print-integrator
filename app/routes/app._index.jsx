@@ -4,7 +4,8 @@ import { Page, Layout, Card, TextField, Button, BlockStack, Text, Box } from "@s
 import AnimatedLoader from "../components/AnimatedLoader";
 import { syncShopifyTokenToOdoo } from "../lib/odooTokenSync.server.js";
 
-const DEFAULT_ODOO_URL = "http://161.97.133.248:8099";
+// Always prefer the env var — fallback to Contabo IP only if env var missing
+const DEFAULT_ODOO_URL = (process.env.ODOO_BASE_URL || "http://161.97.133.248:8099").replace(/\/$/, "");
 
 function readCookie(cookieHeader, name) {
   const match = cookieHeader.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -26,8 +27,39 @@ export const loader = async ({ request }) => {
   let accountName = readCookie(cookieHeader, "odoo_account_name") || "";
   let accountEmail = readCookie(cookieHeader, "odoo_account_email") || "";
 
-  const config = await prisma.shopConfig.findUnique({ where: { shop } });
-  let odooBaseUrl = config?.odooBaseUrl || DEFAULT_ODOO_URL;
+  let config = await prisma.shopConfig.findUnique({ where: { shop } });
+
+  // ── Auto-seed odooBaseUrl from env when SQLite is empty / just wiped ────────
+  // Railway SQLite is ephemeral — it resets on every deploy.  Without this the
+  // app falls back to the hardcoded IP and token sync hits the wrong server.
+  const envOdooUrl = DEFAULT_ODOO_URL;
+  if (!config) {
+    try {
+      config = await prisma.shopConfig.create({
+        data: {
+          shop,
+          odooBaseUrl: envOdooUrl,
+          enabled: true,
+        },
+      });
+      console.log("[App] Auto-seeded shopConfig from env:", envOdooUrl);
+    } catch (seedErr) {
+      console.warn("[App] Could not auto-seed shopConfig:", seedErr?.message);
+    }
+  } else if (!config.odooBaseUrl) {
+    // Config row exists but odooBaseUrl is blank — fill it in
+    try {
+      config = await prisma.shopConfig.update({
+        where: { shop },
+        data: { odooBaseUrl: envOdooUrl },
+      });
+    } catch (updateErr) {
+      console.warn("[App] Could not update odooBaseUrl:", updateErr?.message);
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
+  let odooBaseUrl = (config?.odooBaseUrl || envOdooUrl).replace(/\/$/, "");
 
   // Auto-register ScriptTag for storefront Cart Helper
   const shopifyAppUrl = process.env.SHOPIFY_APP_URL || process.env.APP_URL || process.env.HOST || "";
@@ -57,7 +89,6 @@ export const loader = async ({ request }) => {
   if (urlToken) {
     accountName = url.searchParams.get("name") || "";
     accountEmail = url.searchParams.get("email") || "";
-    odooBaseUrl = odooBaseUrl || DEFAULT_ODOO_URL;
 
     await prisma.shopConfig.upsert({
       where: { shop },
