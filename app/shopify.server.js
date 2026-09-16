@@ -71,13 +71,19 @@ class CustomPrismaSessionStorage extends PrismaSessionStorage {
     return session;
   }
 
+  async findSessionsByShop(shop) {
+    const sessions = await super.findSessionsByShop(shop);
+    return (sessions || []).filter(
+      (s) => !(s.accessToken && s.accessToken.startsWith("shpat_"))
+    );
+  }
+
   async loadSession(id) {
     const session = await super.loadSession(id);
     if (!session) return undefined;
 
-    // If token is a legacy non-expiring shpat_ token without a refresh token,
-    // return undefined so @shopify/shopify-app-remix performs fresh tokenExchange
-    if (session.accessToken && session.accessToken.startsWith("shpat_") && !session.refreshToken) {
+    // Reject all legacy non-expiring shpat_ tokens so @shopify/shopify-app-remix performs fresh tokenExchange
+    if (session.accessToken && session.accessToken.startsWith("shpat_")) {
       return undefined;
     }
 

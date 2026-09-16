@@ -75,12 +75,11 @@ export const loader = async ({ request }) => {
   // when it expires (Odoo runs on Contabo, Remix on Railway — no shared SQLite).
   // ── AUTO-CLEANUP STALE NON-EXPIRING TOKENS IN PRISMA SQLITE ──────────────
   let activeSession = session;
-  if (activeSession.accessToken && activeSession.accessToken.startsWith("shpat_") && !activeSession.refreshToken) {
+  if (activeSession.accessToken && activeSession.accessToken.startsWith("shpat_")) {
     try {
       await prisma.session.deleteMany({
         where: {
           shop,
-          accessToken: { startsWith: "shpat_" },
         },
       });
       console.log(`[TokenSync] Purged stale shpat_ session from Prisma for: ${shop}`);
