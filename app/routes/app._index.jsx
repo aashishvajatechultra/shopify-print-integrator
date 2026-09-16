@@ -78,17 +78,38 @@ export const loader = async ({ request }) => {
   if (activeSession.accessToken && activeSession.accessToken.startsWith("shpat_")) {
     try {
       await prisma.session.deleteMany({
-        where: {
-          shop,
-        },
+        where: { shop },
       });
       console.log(`[TokenSync] Purged stale shpat_ session from Prisma for: ${shop}`);
-      const freshAuth = await authenticate.admin(request);
-      activeSession = freshAuth.session;
+      
+      const authHeader = request.headers.get("Authorization") || "";
+      const sessionToken = authHeader.replace(/^Bearer\s+/i, "").strip ? authHeader.replace(/^Bearer\s+/i, "").trim() : (url.searchParams.get("id_token") || "");
+      
+      const shopifyModule = await import("../shopify.server.js");
+      const shopifyAppInst = shopifyModule.default;
+      
+      if (sessionToken && shopifyAppInst?.api?.auth?.tokenExchange) {
+        const { RequestedTokenType } = await import("@shopify/shopify-api");
+        const exchangeRes = await shopifyAppInst.api.auth.tokenExchange({
+          shop,
+          sessionToken,
+          requestedTokenType: RequestedTokenType.OfflineAccessToken,
+        });
+        if (exchangeRes?.session) {
+          activeSession = exchangeRes.session;
+          await shopifyAppInst.sessionStorage.storeSession(activeSession);
+          console.log(`[TokenSync] ✓ Forced fresh token exchange for ${shop}: ${activeSession.accessToken?.substring(0, 10)}...`);
+        }
+      }
     } catch (cleanErr) {
       console.warn("[TokenSync] Session cleanup / re-auth warning:", cleanErr.message);
     }
   }
+
+  // Prevent ever pushing a shpat_ token to Odoo
+  const validAccessToken = (activeSession.accessToken && !activeSession.accessToken.startsWith("shpat_"))
+    ? activeSession.accessToken
+    : "";
 
   const tokenExpiresAt = activeSession.expires
     ? new Date(activeSession.expires).toISOString()
@@ -97,7 +118,7 @@ export const loader = async ({ request }) => {
   syncShopifyTokenToOdoo(
     odooBaseUrl,
     shop,
-    activeSession.accessToken,
+    validAccessToken,
     config?.odooToken || token || "",
     activeSession.refreshToken || "",
     tokenExpiresAt,
