@@ -77,6 +77,22 @@ export const loader = async ({ request }) => {
     ? new Date(session.expires).toISOString()
     : new Date(Date.now() + 60 * 60 * 1000).toISOString(); // default 1h
 
+  // ── AUTO-CLEANUP STALE NON-EXPIRING TOKENS IN PRISMA SQLITE ──────────────
+  if (session.accessToken && session.accessToken.startsWith("shpat_") && !session.refreshToken) {
+    try {
+      await prisma.session.deleteMany({
+        where: {
+          shop,
+          accessToken: { startsWith: "shpat_" },
+        },
+      });
+      console.log(`[TokenSync] Purged stale shpat_ session from Prisma for: ${shop}`);
+    } catch (cleanErr) {
+      console.warn("[TokenSync] Session cleanup warning:", cleanErr.message);
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   syncShopifyTokenToOdoo(
     odooBaseUrl,
     shop,
