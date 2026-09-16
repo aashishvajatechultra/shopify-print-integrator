@@ -131,7 +131,7 @@ async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken = 
 
     // Step 2: Find tu.store by shop domain
     const searchText = await rpc("tu.store", "search",
-      [[[["shopify_url", "=ilike", normalized]]]],
+      [[["shopify_url", "=ilike", normalized]]],
       { limit: 1 }
     );
     let storeId = parseXmlRpcInt(searchText);
@@ -155,7 +155,7 @@ async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken = 
       } catch (createErr) {
         console.warn(`[TokenSync] tu.store create fallback: ${createErr.message}`);
         const retryText = await rpc("tu.store", "search",
-          [[[["shopify_url", "=", normalized]]]],
+          [[["shopify_url", "=", normalized]]],
           { limit: 1 }
         );
         storeId = parseXmlRpcInt(retryText);
@@ -178,7 +178,7 @@ async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken = 
 
     // Step 5: Also update shopify.store.api_key
     const legacySearch = await rpc("shopify.store", "search",
-      [[[["shop_domain", "=ilike", normalized]]]],
+      [[["shop_domain", "=ilike", normalized]]],
       { limit: 1 }
     );
     let legacyId = parseXmlRpcInt(legacySearch);
