@@ -8,7 +8,7 @@ const PROXY_PREFIX = "/odoo-frame";
 const HOP_BY_HOP = new Set([
   "connection", "keep-alive", "transfer-encoding", "te",
   "trailer", "upgrade", "proxy-authorization", "proxy-authenticate",
-  "content-length",
+  "content-length", "content-encoding", "vary",
 ]);
 
 // All Odoo path prefixes that need proxying
@@ -132,6 +132,7 @@ function buildUpstreamHeaders(req, origin) {
   }
   h.set("X-Forwarded-Proto", "https");
   h.set("X-Forwarded-Host", new URL(req.url).host);
+  h.set("Accept-Encoding", "identity"); // Force uncompressed — prevents ERR_CONTENT_DECODING_FAILED
   return h;
 }
 
