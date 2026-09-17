@@ -105,7 +105,21 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
     if (admin && typeof admin.graphql === "function") {
       try {
         const resp = await admin.graphql(PRODUCTS_QUERY.trim(), { variables: queryVars });
-        json = await resp.json();
+
+        // admin.graphql() returns a Response object — check HTTP status first
+        if (resp && typeof resp.json === "function") {
+          if (resp.ok === false) {
+            // Non-2xx HTTP response
+            const errText = await resp.text().catch(() => "(unreadable)");
+            console.warn(`[AutoOnboard] admin.graphql HTTP error (${resp.status}):`, errText.slice(0, 200));
+            json = null;
+          } else {
+            json = await resp.json();
+          }
+        } else {
+          // resp itself might be a JSON object (some SDK versions)
+          json = resp;
+        }
 
         // If Shopify returned errors in the body (not HTTP-level), log and clear
         if (json?.errors?.length) {
@@ -114,8 +128,21 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
           json = null;
         }
       } catch (adminGqlErr) {
-        const msg = adminGqlErr?.message || String(adminGqlErr);
-        console.warn("[AutoOnboard] admin.graphql threw:", msg);
+        // Shopify SDK sometimes throws a Response object instead of Error
+        // when authentication fails — handle both cases
+        if (adminGqlErr && typeof adminGqlErr.json === "function") {
+          try {
+            const errBody = await adminGqlErr.json().catch(() => null);
+            const errText = await adminGqlErr.text?.().catch(() => "") || "";
+            const status = adminGqlErr.status || "?";
+            console.warn(`[AutoOnboard] admin.graphql threw Response (${status}):`, errBody || errText.slice(0, 200));
+          } catch {
+            console.warn("[AutoOnboard] admin.graphql threw Response object (unreadable)");
+          }
+        } else {
+          const msg = adminGqlErr?.message || String(adminGqlErr);
+          console.warn("[AutoOnboard] admin.graphql threw:", msg);
+        }
         json = null;
       }
     }
@@ -290,3 +317,26 @@ export async function autoOnboardStore(session, odooBaseUrl, admin = null) {
     console.error(`[AutoOnboard] Error for ${shop}:`, err.message);
   }
 }
+
+/**
+ * EXPORT: Fetch all Shopify products using admin.graphql() — call WITHIN Remix loader.
+ * admin.graphql() only works while the Shopify request context is alive.
+ *
+ * @param {object} admin - from authenticate.admin(request)
+ * @param {string} shop  - e.g. "my-store.myshopify.com"
+ */
+export async function fetchShopifyProductsWithAdmin(admin, shop) {
+  if (!admin || typeof admin.graphql !== "function") {
+    console.warn("[AutoOnboard] fetchShopifyProductsWithAdmin: no admin client.");
+    return [];
+  }
+  console.log(`[AutoOnboard] fetchShopifyProductsWithAdmin: starting for ${shop}`);
+  const products = await fetchAllProducts(shop, null, admin);
+  console.log(`[AutoOnboard] fetchShopifyProductsWithAdmin: got ${products.length} products`);
+  return products;
+}
+
+/**
+ * EXPORT: Push products to Odoo — plain HTTP, safe to call fire-and-forget.
+ */
+export { pushProductsToOdoo };

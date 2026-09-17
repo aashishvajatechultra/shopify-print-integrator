@@ -98,13 +98,27 @@ export const loader = async ({ request }) => {
   // ──────────────────────────────────────────────────────────────────────────
 
 
-  // ── AUTO-ONBOARD PRODUCTS FROM SHOPIFY TO ODOO ─────────────────────────────
-  // Auto-fetches all products from Shopify and pushes them to Odoo on app load.
-  const { autoOnboardStore } = await import("../lib/autoOnboard.server.js");
-  autoOnboardStore(activeSession, odooBaseUrl, admin).catch(e => {
-    console.error("autoOnboardStore background error:", e);
-  });
+  // ── AUTO-SYNC PRODUCTS: Shopify → Odoo (runs on every app open) ────────────
+  // IMPORTANT: admin.graphql() only works within the request context.
+  // So we fetch products HERE (synchronously in loader), then fire-and-forget
+  // only the Odoo push (which is a plain HTTP call, no Shopify SDK needed).
+  try {
+    const { fetchShopifyProductsWithAdmin, pushProductsToOdoo } = await import("../lib/autoOnboard.server.js");
+    // Fetch products using admin.graphql() — works within request context
+    const products = await fetchShopifyProductsWithAdmin(admin, shop);
+    console.log(`[App] Fetched ${products.length} products from Shopify for ${shop}`);
+
+    if (products.length > 0) {
+      // Push to Odoo fire-and-forget (plain HTTP, no Shopify SDK)
+      pushProductsToOdoo(odooBaseUrl, shop, products).catch(e => {
+        console.warn("[App] Odoo product push error:", e.message);
+      });
+    }
+  } catch (productFetchErr) {
+    console.warn("[App] Could not fetch Shopify products:", productFetchErr.message);
+  }
   // ──────────────────────────────────────────────────────────────────────────
+
 
   let responseHeaders = null;
 
