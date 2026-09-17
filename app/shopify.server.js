@@ -144,9 +144,6 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new CustomPrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
-  future: {
-    unstable_newEmbeddedAuthStrategy: true,
-  },
   // ── Auto-register webhooks so Shopify sends real-time product events ──────
   // When a merchant adds/updates a product in Shopify, we get notified
   // and immediately push it to Odoo — fully automatic, no manual action needed.
