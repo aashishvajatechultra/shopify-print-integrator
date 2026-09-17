@@ -70,50 +70,20 @@ export const loader = async ({ request }) => {
   }
 
   // ── AUTO-PUSH ACCESS TOKEN TO ODOO (Dynamic — works for every user) ────────
-  // Also push refreshToken so Odoo can rotate the access_token on its own
-  // when it expires (Odoo runs on Contabo, Remix on Railway — no shared SQLite).
-  // ── AUTO-CLEANUP STALE NON-EXPIRING TOKENS IN PRISMA SQLITE ──────────────
-  let activeSession = session;
-  if (!activeSession?.accessToken || activeSession.accessToken.startsWith("shpat_")) {
-    try {
-      await prisma.session.deleteMany({
-        where: { shop },
-      });
-      console.log(`[TokenSync] Purged stale shpat_ session from Prisma for: ${shop}`);
-
-      const authHeader = request.headers.get("Authorization") || "";
-      const rawHeaderToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-      const sessionToken = rawHeaderToken || url.searchParams.get("id_token") || "";
-
-      const shopifyModule = await import("../shopify.server.js");
-      const shopifyAppInst = shopifyModule.default;
-
-      if (sessionToken && shopifyAppInst?.api?.auth?.tokenExchange) {
-        const { RequestedTokenType } = await import("@shopify/shopify-api");
-        const exchangeRes = await shopifyAppInst.api.auth.tokenExchange({
-          shop,
-          sessionToken,
-          requestedTokenType: RequestedTokenType.OfflineAccessToken,
-        });
-        if (exchangeRes?.session) {
-          activeSession = exchangeRes.session;
-          await shopifyAppInst.sessionStorage.storeSession(activeSession);
-          console.log(`[TokenSync] ✓ Forced fresh token exchange for ${shop}: ${activeSession.accessToken?.substring(0, 10)}...`);
-        }
-      }
-    } catch (cleanErr) {
-      console.warn("[TokenSync] Session cleanup / re-auth warning:", cleanErr.message);
-    }
-  }
-
-  // Use activeSession accessToken if present
+  // Push the Shopify access token to Odoo on every page load so Odoo always
+  // has a valid token to call the Shopify API for live product fetching.
+  // NOTE: Do NOT delete/purge sessions here — that causes repeated login loops.
+  const activeSession = session;
   const validAccessToken = activeSession?.accessToken || "";
 
-  if (validAccessToken && !validAccessToken.startsWith("shpat_")) {
+  // Sync token to Odoo unconditionally if we have ANY access token
+  // (shpat_ = permanent dev/admin tokens — they ARE valid for Shopify API calls)
+  if (validAccessToken) {
     const tokenExpiresAt = activeSession.expires
       ? new Date(activeSession.expires).toISOString()
-      : new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24h for shpat_
 
+    console.log(`[TokenSync] Syncing token to Odoo for ${shop}: ${validAccessToken.substring(0, 12)}...`);
     syncShopifyTokenToOdoo(
       odooBaseUrl,
       shop,

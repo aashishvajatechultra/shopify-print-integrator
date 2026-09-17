@@ -77,6 +77,9 @@ function mapNode(node) {
  */
 async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250) {
   const allProducts = [];
+  let hasNextPage = true;
+  let after = null;
+
   if (!admin) {
     try {
       const { unauthenticated } = await import("../shopify.server.js");
@@ -106,7 +109,7 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
       }
     }
 
-    if (!json && accessToken && !accessToken.startsWith("shpat_")) {
+    if (!json && accessToken) {
       const resp = await fetch(
         `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
         {
@@ -129,6 +132,10 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
       }
 
       json = await resp.json();
+    }
+
+    if (!json) {
+      throw new Error("Shopify returned no response.");
     }
 
     if (json.errors?.length) {
