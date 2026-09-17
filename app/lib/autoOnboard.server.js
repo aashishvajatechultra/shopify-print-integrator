@@ -11,7 +11,7 @@
  * a merchant opens the app for the first time (or after a Railway redeploy wipe).
  */
 
-const SHOPIFY_API_VERSION = "2024-10";
+const SHOPIFY_API_VERSION = "2026-07";
 
 const PRODUCTS_QUERY = `
   query SyncProducts($first: Int!, $after: String, $query: String) {

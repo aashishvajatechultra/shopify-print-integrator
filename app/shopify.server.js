@@ -138,7 +138,7 @@ if (missingEnvVars.length > 0) {
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET,
-  apiVersion: ApiVersion.October24,
+  apiVersion: ApiVersion.July26,
   scopes: ["read_products", "write_products", "write_script_tags", "read_script_tags"],
   appUrl: process.env.SHOPIFY_APP_URL || process.env.APP_URL || process.env.HOST || "",
   authPathPrefix: "/auth",
