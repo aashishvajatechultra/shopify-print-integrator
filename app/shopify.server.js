@@ -147,6 +147,28 @@ const shopify = shopifyApp({
   future: {
     unstable_newEmbeddedAuthStrategy: true,
   },
+  // ── Auto-register webhooks so Shopify sends real-time product events ──────
+  // When a merchant adds/updates a product in Shopify, we get notified
+  // and immediately push it to Odoo — fully automatic, no manual action needed.
+  webhooks: {
+    PRODUCTS_CREATE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks",
+    },
+    PRODUCTS_UPDATE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks",
+    },
+    PRODUCTS_DELETE: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks",
+    },
+    APP_UNINSTALLED: {
+      deliveryMethod: "http",
+      callbackUrl: "/webhooks",
+    },
+  },
+  // ─────────────────────────────────────────────────────────────────────────
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),

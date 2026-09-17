@@ -66,6 +66,8 @@ export const action = async ({ request }) => {
   try {
     const { topic, shop, session, payload } = await authenticate.webhook(request);
 
+    console.log(`[Webhook] Received: ${topic} for shop: ${shop}`);
+
     switch (topic) {
       case "APP_UNINSTALLED":
         if (session) {
@@ -79,8 +81,16 @@ export const action = async ({ request }) => {
       case "PRODUCTS_CREATE":
       case "PRODUCTS_UPDATE":
         if (payload) {
-          syncProductToOdoo(shop, payload).catch(err => {
+          syncProductToOdoo(shop, payload, "upsert").catch(err => {
             console.error("[Webhook Sync Error]:", err);
+          });
+        }
+        break;
+
+      case "PRODUCTS_DELETE":
+        if (payload?.id) {
+          syncProductToOdoo(shop, payload, "delete").catch(err => {
+            console.error("[Webhook Delete Error]:", err);
           });
         }
         break;
@@ -105,7 +115,7 @@ export const action = async ({ request }) => {
 };
 
 
-async function syncProductToOdoo(shop, payload) {
+async function syncProductToOdoo(shop, payload, mode = "upsert") {
   try {
     let config = await db.shopConfig.findUnique({ where: { shop } }).catch(() => null);
 
@@ -116,43 +126,71 @@ async function syncProductToOdoo(shop, payload) {
       return;
     }
 
-    const firstVariant = payload.variants?.[0];
+    const base = odooBaseUrl.replace(/\/$/, "");
+
+    // ── DELETE mode ──────────────────────────────────────────────────────────
+    if (mode === "delete") {
+      const shopifyProductId = String(payload.id);
+      console.log(`[Webhook] Product deleted in Shopify: ${shopifyProductId} for ${shop}`);
+      // Odoo side: mark mapping as inactive via the product-sync endpoint
+      await fetch(`${base}/api/shopify/webhook/product-sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shop_domain: shop,
+          products: [{
+            shopify_product_id: shopifyProductId,
+            status: "ARCHIVED",  // Mark as archived so it disappears from active list
+          }],
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      return;
+    }
+
+    // ── UPSERT mode (CREATE / UPDATE) ────────────────────────────────────────
+    const variants = payload.variants || [];
+    const firstVariant = variants[0];
     const mainImageUrl =
       payload.image?.src ||
       payload.images?.[0]?.src ||
       "";
 
+    // Map shopify variant IDs
+    const variantIds = variants.map(v => String(v.id));
+
     const productData = {
-      id: String(payload.id),
+      shopify_product_id: String(payload.id),   // ← correct field name for Odoo
       title: payload.title || "",
       description: payload.body_html || "",
-      price: firstVariant
-        ? String(firstVariant.price)
-        : "0.00",
+      price: firstVariant ? `$${firstVariant.price}` : "0.00",
+      image: mainImageUrl,
       image_url: mainImageUrl,
-      status: payload.status || "active",
+      status: (payload.status || "active").toUpperCase(),
       category: payload.product_type || "Uncategorized",
+      product_type: payload.product_type || "",
       handle: payload.handle || "",
-      shopify_variant_ids:
-        payload.variants?.map(v => String(v.id)) || [],
+      shopify_variant_ids: variantIds,
+      variant_ids: variantIds,
+      taxable: variants.some(v => v.taxable === true),
     };
 
-    const odooUrl =
-      `${odooBaseUrl.replace(/\/$/, "")}` +
-      `/api/shopify/webhook/product-sync`;
+    console.log(`[Webhook] Syncing product "${productData.title}" (${productData.shopify_product_id}) to Odoo for ${shop}`);
 
-    await fetch(odooUrl, {
+    const resp = await fetch(`${base}/api/shopify/webhook/product-sync`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         shop_domain: shop,
         products: [productData],
       }),
+      signal: AbortSignal.timeout(15000),
     });
 
+    const result = await resp.json().catch(() => ({}));
+    console.log(`[Webhook] Odoo sync result:`, result);
+
   } catch (err) {
-    console.error(err);
+    console.error("[Webhook syncProductToOdoo error]:", err);
   }
 }
