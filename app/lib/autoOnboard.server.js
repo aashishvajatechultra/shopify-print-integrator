@@ -80,96 +80,62 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
   let hasNextPage = true;
   let after = null;
 
-  // Prefer the authenticated admin SDK client — it handles token refresh internally
-  if (!admin) {
-    try {
-      const { unauthenticated } = await import("../shopify.server.js");
-      const unauth = await unauthenticated.admin(shop);
-      admin = unauth?.admin || null;
-    } catch (unauthErr) {
-      console.warn("[AutoOnboard] unauthenticated.admin failed:", unauthErr.message);
-    }
-  }
-
   while (hasNextPage) {
     let json = null;
-    const queryVars = {
-      first: pageSize,
-      after,
-      query: "status:ACTIVE OR status:DRAFT OR status:ARCHIVED",
-    };
+    const queryVars = { first: pageSize, after };
 
-    // ── Strategy 1: authenticated admin.graphql() ─────────────────────────────
-    // This uses Shopify's session-based auth (NOT the raw accessToken)
-    // and works even when shpat_ tokens are banned.
+    // ── Strategy 1: admin.graphql() within request context ───────────────────
     if (admin && typeof admin.graphql === "function") {
       try {
         const resp = await admin.graphql(PRODUCTS_QUERY.trim(), { variables: queryVars });
 
-        // admin.graphql() returns a Response object — check HTTP status first
+        // Shopify SDK returns a Response object (Fetch API)
         if (resp && typeof resp.json === "function") {
-          if (resp.ok === false) {
-            // Non-2xx HTTP response
-            const errText = await resp.text().catch(() => "(unreadable)");
-            console.warn(`[AutoOnboard] admin.graphql HTTP error (${resp.status}):`, errText.slice(0, 200));
-            json = null;
-          } else {
-            json = await resp.json();
+          // Clone to safely read body
+          const body = await resp.json().catch(() => null);
+          if (body && !body.errors?.length) {
+            json = body;
+          } else if (body?.errors?.length) {
+            console.warn("[AutoOnboard] admin.graphql errors:", body.errors.map(e => e.message).join("; "));
           }
-        } else {
-          // resp itself might be a JSON object (some SDK versions)
+        } else if (resp && resp.data) {
+          // Some SDK versions return JSON directly
           json = resp;
         }
-
-        // If Shopify returned errors in the body (not HTTP-level), log and clear
-        if (json?.errors?.length) {
-          const errMsg = json.errors.map(e => e.message).join("; ");
-          console.warn("[AutoOnboard] admin.graphql body errors:", errMsg);
-          json = null;
-        }
-      } catch (adminGqlErr) {
-        // Shopify SDK sometimes throws a Response object instead of Error
-        // when authentication fails — handle both cases
-        if (adminGqlErr && typeof adminGqlErr.json === "function") {
+      } catch (adminErr) {
+        // Shopify SDK may throw a Response object — read it
+        if (adminErr && typeof adminErr.json === "function") {
           try {
-            const errBody = await adminGqlErr.json().catch(() => null);
-            const errText = await adminGqlErr.text?.().catch(() => "") || "";
-            const status = adminGqlErr.status || "?";
-            console.warn(`[AutoOnboard] admin.graphql threw Response (${status}):`, errBody || errText.slice(0, 200));
+            const errBody = await adminErr.json().catch(() => ({}));
+            const status = adminErr.status || "?";
+            console.warn(`[AutoOnboard] admin.graphql Response error (${status}):`, JSON.stringify(errBody).slice(0, 200));
           } catch {
-            console.warn("[AutoOnboard] admin.graphql threw Response object (unreadable)");
+            console.warn("[AutoOnboard] admin.graphql threw unreadable Response");
           }
         } else {
-          const msg = adminGqlErr?.message || String(adminGqlErr);
-          console.warn("[AutoOnboard] admin.graphql threw:", msg);
+          console.warn("[AutoOnboard] admin.graphql threw:", adminErr?.message || String(adminErr));
         }
         json = null;
       }
     }
 
-    // ── Strategy 2: only if admin.graphql gave us nothing ───────────────────
-    // NOTE: shpat_ tokens are banned by Shopify — skip them for REST calls too.
-    // Only try REST if we have a proper expiring token (shpua_).
-    if (!json && accessToken && accessToken.startsWith("shpua_")) {
+    // ── Strategy 2: Direct REST via accessToken (expiring tokens only) ────────
+    if (!json && accessToken && !accessToken.startsWith("shpat_")) {
       try {
         const resp = await fetch(
           `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
           {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Shopify-Access-Token": accessToken,
-            },
+            headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": accessToken },
             body: JSON.stringify({ query: PRODUCTS_QUERY.trim(), variables: queryVars }),
             signal: AbortSignal.timeout(30000),
           }
         );
-
-        if (!resp.ok) {
-          const txt = await resp.text();
-          console.warn(`[AutoOnboard] REST fallback error (${resp.status}):`, txt.slice(0, 200));
-        } else {
+        if (resp.ok) {
           json = await resp.json();
+        } else {
+          const txt = await resp.text();
+          console.warn(`[AutoOnboard] REST fallback (${resp.status}):`, txt.slice(0, 200));
         }
       } catch (fetchErr) {
         console.warn("[AutoOnboard] REST fallback threw:", fetchErr.message);
@@ -177,19 +143,21 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
     }
 
     if (!json) {
-      console.warn("[AutoOnboard] No data from Shopify — stopping pagination.");
+      console.warn("[AutoOnboard] No Shopify data — stopping pagination.");
       break;
     }
 
     if (json.errors?.length) {
-      throw new Error(json.errors.map(e => e.message).join("; "));
+      console.warn("[AutoOnboard] GraphQL errors:", json.errors.map(e => e.message).join("; "));
+      break;
     }
 
     const connection = json?.data?.products;
     if (!connection) {
-      console.warn("[AutoOnboard] Unexpected response shape:", JSON.stringify(json).slice(0, 200));
+      console.warn("[AutoOnboard] Unexpected shape:", JSON.stringify(json).slice(0, 150));
       break;
     }
+
 
 
     for (const edge of connection.edges || []) {
