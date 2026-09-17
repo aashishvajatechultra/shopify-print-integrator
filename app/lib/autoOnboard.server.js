@@ -80,6 +80,7 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
   let hasNextPage = true;
   let after = null;
 
+  // Prefer the authenticated admin SDK client — it handles token refresh internally
   if (!admin) {
     try {
       const { unauthenticated } = await import("../shopify.server.js");
@@ -91,51 +92,66 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
   }
 
   while (hasNextPage) {
-    let json;
+    let json = null;
     const queryVars = {
       first: pageSize,
       after,
       query: "status:ACTIVE OR status:DRAFT OR status:ARCHIVED",
     };
+
+    // ── Strategy 1: authenticated admin.graphql() ─────────────────────────────
+    // This uses Shopify's session-based auth (NOT the raw accessToken)
+    // and works even when shpat_ tokens are banned.
     if (admin && typeof admin.graphql === "function") {
       try {
-        const resp = await admin.graphql(PRODUCTS_QUERY.trim(), {
-          variables: queryVars,
-        });
+        const resp = await admin.graphql(PRODUCTS_QUERY.trim(), { variables: queryVars });
         json = await resp.json();
+
+        // If Shopify returned errors in the body (not HTTP-level), log and clear
+        if (json?.errors?.length) {
+          const errMsg = json.errors.map(e => e.message).join("; ");
+          console.warn("[AutoOnboard] admin.graphql body errors:", errMsg);
+          json = null;
+        }
       } catch (adminGqlErr) {
-        console.warn("[AutoOnboard] admin.graphql call failed, falling back to direct fetch:", adminGqlErr.message);
+        const msg = adminGqlErr?.message || String(adminGqlErr);
+        console.warn("[AutoOnboard] admin.graphql threw:", msg);
         json = null;
       }
     }
 
-    if (!json && accessToken) {
-      const resp = await fetch(
-        `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Shopify-Access-Token": accessToken,
-          },
-          body: JSON.stringify({
-            query: PRODUCTS_QUERY.trim(),
-            variables: queryVars,
-          }),
-          signal: AbortSignal.timeout(30000),
+    // ── Strategy 2: only if admin.graphql gave us nothing ───────────────────
+    // NOTE: shpat_ tokens are banned by Shopify — skip them for REST calls too.
+    // Only try REST if we have a proper expiring token (shpua_).
+    if (!json && accessToken && accessToken.startsWith("shpua_")) {
+      try {
+        const resp = await fetch(
+          `https://${shop}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Shopify-Access-Token": accessToken,
+            },
+            body: JSON.stringify({ query: PRODUCTS_QUERY.trim(), variables: queryVars }),
+            signal: AbortSignal.timeout(30000),
+          }
+        );
+
+        if (!resp.ok) {
+          const txt = await resp.text();
+          console.warn(`[AutoOnboard] REST fallback error (${resp.status}):`, txt.slice(0, 200));
+        } else {
+          json = await resp.json();
         }
-      );
-
-      if (!resp.ok) {
-        const txt = await resp.text();
-        throw new Error(`Shopify GraphQL error (${resp.status}): ${txt.slice(0, 200)}`);
+      } catch (fetchErr) {
+        console.warn("[AutoOnboard] REST fallback threw:", fetchErr.message);
       }
-
-      json = await resp.json();
     }
 
     if (!json) {
-      throw new Error("Shopify returned no response.");
+      console.warn("[AutoOnboard] No data from Shopify — stopping pagination.");
+      break;
     }
 
     if (json.errors?.length) {
@@ -143,7 +159,11 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
     }
 
     const connection = json?.data?.products;
-    if (!connection) throw new Error("Shopify returned no products data.");
+    if (!connection) {
+      console.warn("[AutoOnboard] Unexpected response shape:", JSON.stringify(json).slice(0, 200));
+      break;
+    }
+
 
     for (const edge of connection.edges || []) {
       if (edge?.node) allProducts.push(mapNode(edge.node));
