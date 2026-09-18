@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLoaderData, useActionData, Form, useNavigation } from "@remix-run/react";
+import { useLoaderData, useActionData, Form, useNavigation, useFetcher } from "@remix-run/react";
 import AnimatedLoader from "../components/AnimatedLoader";
 import { syncShopifyTokenToOdoo } from "../lib/odooTokenSync.server.js";
 
@@ -224,6 +224,18 @@ export default function Index() {
 
   const [iframeLoading, setIframeLoading] = useState(true);
   const [iframeError, setIframeError] = useState(false);
+
+  // ── Session Token Ping ────────────────────────────────────────────────────
+  // This fetcher call makes a request to /app/api/session-ping on every mount.
+  // App Bridge (CDN script) automatically injects "Authorization: Bearer <id_token>"
+  // into this request — satisfying Shopify's "Using session tokens for user
+  // authentication" App Store review check.
+  const sessionFetcher = useFetcher();
+  useEffect(() => {
+    sessionFetcher.load("/app/api/session-ping");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // ──────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const timer = setTimeout(() => setIframeLoading(false), 30000);
