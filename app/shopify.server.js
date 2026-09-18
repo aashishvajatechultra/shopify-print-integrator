@@ -10,6 +10,24 @@ import { Session } from "@shopify/shopify-api";
 
 const prisma = new PrismaClient();
 
+// ── Startup Cleanup: Purge deprecated offline shpat_ tokens ──────────────────
+// Shopify deprecated permanent offline tokens (shpat_). Any such tokens stored
+// in our SQLite DB must be deleted immediately at startup so they are NEVER used
+// for API calls. This stops the "Deprecated offline token use detected" warning
+// in Partner Dashboard and ensures the App Store "Using session tokens" check passes.
+// The Token Exchange flow (unstable_newEmbeddedAuthStrategy) will mint fresh
+// expiring tokens the next time a merchant opens the app.
+prisma.session.deleteMany({
+  where: { accessToken: { startsWith: "shpat_" } },
+}).then((result) => {
+  if (result.count > 0) {
+    console.warn(`[Startup] Deleted ${result.count} deprecated shpat_ session(s) from DB — Token Exchange will mint fresh tokens.`);
+  }
+}).catch((err) => {
+  console.error("[Startup] Failed to purge deprecated shpat_ sessions:", err?.message);
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Helper to sanitize shop name
 function sanitizeShopName(shop) {
   if (!shop) return "";

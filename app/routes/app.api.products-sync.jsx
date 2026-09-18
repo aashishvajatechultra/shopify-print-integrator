@@ -1,5 +1,5 @@
 import { json } from "@remix-run/node";
-import shopify, { authenticate, unauthenticated } from "../shopify.server.js";
+import { authenticate } from "../shopify.server.js";
 import { fetchAllShopifyProducts, callOdooJson } from "../lib/shopifyProductFetch.server.js";
 import db from "../db.server.js";
 
@@ -11,31 +11,23 @@ export const action = async ({ request }) => {
 
   let admin;
   let session;
+
+  // IMPORTANT: Always use authenticate.admin() via session token (Token Exchange flow).
+  // Never fall back to unauthenticated.admin() with offline sessions — doing so
+  // uses deprecated permanent offline tokens (shpat_) which triggers:
+  //   "Deprecated offline token use detected" in Partner Dashboard
+  //   and FAILS the "Using session tokens for user authentication" App Store check.
   try {
     const authResult = await authenticate.admin(request);
     admin = authResult.admin;
     session = authResult.session;
-
   } catch (err) {
-    if (token && shopFromForm) {
-      try {
-        const offlineId = shopify.api.session.getOfflineId(shopFromForm);
-        session = await shopify.sessionStorage.loadSession(offlineId);
-        const authResult = await unauthenticated.admin(shopFromForm);
-        admin = authResult.admin;
-      } catch (offlineErr) {
-        console.error("Failed to load offline session:", offlineErr);
-      }
-    }
-
-    if (!session || !admin) {
-      if (err instanceof Response) throw err;
-      console.error("products-sync auth error:", err);
-      return json(
-        { success: false, error: "Shopify session missing. Refresh the app page and try again." },
-        { status: 401 },
-      );
-    }
+    if (err instanceof Response) throw err;
+    console.error("products-sync auth error:", err);
+    return json(
+      { success: false, error: "Shopify session expired. Please refresh the app page." },
+      { status: 401 },
+    );
   }
 
   const intent = form.get("intent");
