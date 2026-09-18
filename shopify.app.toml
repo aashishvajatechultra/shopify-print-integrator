@@ -9,11 +9,14 @@ embedded = true
 automatically_update_urls_on_dev = false
 
 [webhooks]
-api_version = "2024-10"
+api_version = "2026-07"
 
   [[webhooks.subscriptions]]
   uri = "/webhooks"
-  topics = [ "products/create", "products/update", "app/uninstalled" ]
+  topics = [ "products/create", "products/update", "products/delete", "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
 [access_scopes]
@@ -21,6 +24,7 @@ api_version = "2024-10"
 scopes = "read_products,read_script_tags,write_products,write_script_tags"
 
 [auth]
+use_online_tokens = false
 redirect_urls = [
   "https://print-integrator-production.up.railway.app/auth/callback",
   "https://print-integrator-production.up.railway.app/api/auth"

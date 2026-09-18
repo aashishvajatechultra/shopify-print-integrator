@@ -29,10 +29,11 @@ export const loader = async ({ request }) => {
       shop = session.shop;
     }
   } catch (err) {
-    if (!token || !shop) {
-      if (err instanceof Response) throw err;
-      throw err;
-    }
+    // Always rethrow — this allows Shopify's embedded auth strategy
+    // (token exchange / session tokens) to properly handle redirects.
+    // Silencing auth errors breaks "Using session tokens for user authentication" check.
+    if (err instanceof Response) throw err;
+    throw err;
   }
 
   // Auto-restore cookies / save query parameters to cookies
