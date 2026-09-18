@@ -72,26 +72,36 @@ export const loader = async ({ request }) => {
   // ── AUTO-PUSH ACCESS TOKEN TO ODOO (Dynamic — works for every user) ────────
   // Push the Shopify access token to Odoo on every page load so Odoo always
   // has a valid token to call the Shopify API for live product fetching.
-  // NOTE: Do NOT delete/purge sessions here — that causes repeated login loops.
+  //
+  // IMPORTANT: ONLY sync NEW expiring tokens (NOT shpat_ deprecated tokens).
+  // shpat_ = old permanent offline tokens — Shopify deprecated these.
+  // Using them for API calls triggers "Deprecated offline token use detected".
+  // The new Token Exchange flow (unstable_newEmbeddedAuthStrategy) returns
+  // expiring tokens that do NOT start with shpat_.
   const activeSession = session;
   const validAccessToken = activeSession?.accessToken || "";
+  const isDeprecatedToken = validAccessToken.startsWith("shpat_");
 
-  // Sync token to Odoo unconditionally if we have ANY access token
-  // (shpat_ = permanent dev/admin tokens — they ARE valid for Shopify API calls)
-  if (validAccessToken) {
+  if (validAccessToken && !isDeprecatedToken) {
     const tokenExpiresAt = activeSession.expires
       ? new Date(activeSession.expires).toISOString()
-      : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24h for shpat_
+      : null;
 
-    console.log(`[TokenSync] Syncing token to Odoo for ${shop}: ${validAccessToken.substring(0, 12)}...`);
-    syncShopifyTokenToOdoo(
-      odooBaseUrl,
-      shop,
-      validAccessToken,
-      config?.odooToken || token || "",
-      activeSession.refreshToken || "",
-      tokenExpiresAt,
-    );
+    if (tokenExpiresAt) {
+      console.log(`[TokenSync] Syncing EXPIRING token to Odoo for ${shop}: ${validAccessToken.substring(0, 12)}...`);
+      syncShopifyTokenToOdoo(
+        odooBaseUrl,
+        shop,
+        validAccessToken,
+        config?.odooToken || token || "",
+        activeSession.refreshToken || "",
+        tokenExpiresAt,
+      );
+    } else {
+      console.warn(`[TokenSync] Skipping token sync — no expiry on token for ${shop} (not an expiring token?`);
+    }
+  } else if (isDeprecatedToken) {
+    console.warn(`[TokenSync] SKIPPING deprecated shpat_ token for ${shop} — will NOT sync to Odoo. Waiting for Token Exchange to provide expiring token.`);
   }
 
 

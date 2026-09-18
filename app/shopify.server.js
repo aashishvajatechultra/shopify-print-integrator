@@ -82,15 +82,25 @@ class CustomPrismaSessionStorage extends PrismaSessionStorage {
     const session = await super.loadSession(id);
     if (!session) return undefined;
 
-    // Reject all legacy non-expiring shpat_ tokens so @shopify/shopify-app-remix performs fresh tokenExchange
+    // Reject all legacy non-expiring shpat_ tokens.
+    // Shopify has deprecated permanent offline tokens — using them for API calls
+    // triggers "Deprecated offline token use detected" warning in Partner Dashboard
+    // and FAILS the App Store review "Using session tokens for user authentication" check.
+    // DELETE from DB so they can never be re-used by any code path.
     if (session.accessToken && session.accessToken.startsWith("shpat_")) {
+      try {
+        await super.deleteSession(id);
+        console.warn(`[Session] Deleted deprecated shpat_ session ${id} — will trigger fresh Token Exchange`);
+      } catch (delErr) {
+        console.error(`[Session] Failed to delete deprecated session ${id}:`, delErr);
+      }
       return undefined;
     }
 
-    // If there's no refresh token on offline sessions, force session to be expired
+    // If there's no refresh token on offline sessions, return undefined
+    // so the framework triggers a fresh Token Exchange (not just expired session)
     if (!session.isOnline && !session.refreshToken) {
-      session.expires = new Date(0);
-      return session;
+      return undefined;
     }
 
     // Automatically refresh if token is expired or close to expiry (within 5 minutes)
