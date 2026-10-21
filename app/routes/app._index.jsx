@@ -83,23 +83,19 @@ export const loader = async ({ request }) => {
   const isDeprecatedToken = validAccessToken.startsWith("shpat_");
 
   if (validAccessToken && !isDeprecatedToken) {
+    // Always sync when we have a usable access token — do not require session.expires
     const tokenExpiresAt = activeSession.expires
       ? new Date(activeSession.expires).toISOString()
       : null;
-
-    if (tokenExpiresAt) {
-      console.log(`[TokenSync] Syncing EXPIRING token to Odoo for ${shop}: ${validAccessToken.substring(0, 12)}...`);
-      syncShopifyTokenToOdoo(
-        odooBaseUrl,
-        shop,
-        validAccessToken,
-        config?.odooToken || token || "",
-        activeSession.refreshToken || "",
-        tokenExpiresAt,
-      );
-    } else {
-      console.warn(`[TokenSync] Skipping token sync — no expiry on token for ${shop} (not an expiring token?`);
-    }
+    console.log(`[TokenSync] Syncing token to Odoo for ${shop}: ${validAccessToken.substring(0, 12)}... (expires=${tokenExpiresAt || "unknown"})`);
+    syncShopifyTokenToOdoo(
+      odooBaseUrl,
+      shop,
+      validAccessToken,
+      config?.odooToken || token || "",
+      activeSession.refreshToken || "",
+      tokenExpiresAt,
+    );
   } else if (isDeprecatedToken) {
     console.warn(`[TokenSync] SKIPPING deprecated shpat_ token for ${shop} — will NOT sync to Odoo. Waiting for Token Exchange to provide expiring token.`);
   }
@@ -180,6 +176,58 @@ export const loader = async ({ request }) => {
     responseHeaders.append("Set-Cookie", `odoo_account_name=${encodeURIComponent(accountName)}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${COOKIE_MAX_AGE}`);
     responseHeaders.append("Set-Cookie", `odoo_account_email=${encodeURIComponent(accountEmail)}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${COOKIE_MAX_AGE}`);
   }
+
+  // ── Auto-provision Odoo manager on first open (skip Design Studio signup) ──
+  if (!token && odooBaseUrl) {
+    try {
+      const { resolveShopifyStaffEmail, provisionOdooMerchant } = await import("../lib/odooProvision.server.js");
+      const staffEmail = await resolveShopifyStaffEmail(session, admin);
+      const associatedUser = session?.onlineAccessInfo?.associated_user;
+      const staffName = associatedUser
+        ? [associatedUser.first_name, associatedUser.last_name].filter(Boolean).join(" ")
+        : "";
+      const provisionExpires = session.expires
+        ? new Date(session.expires).toISOString()
+        : null;
+      const provisioned = await provisionOdooMerchant(odooBaseUrl, {
+        shop,
+        email: staffEmail,
+        name: staffName,
+        accessToken: validAccessToken && !isDeprecatedToken ? validAccessToken : "",
+        refreshToken: session.refreshToken || "",
+        tokenExpiresAt: provisionExpires,
+      });
+      if (provisioned?.token) {
+        token = provisioned.token;
+        accountName = provisioned.account?.name || staffName || "";
+        accountEmail = provisioned.account?.email || staffEmail || "";
+        await prisma.shopConfig.upsert({
+          where: { shop },
+          create: {
+            shop,
+            odooBaseUrl,
+            odooToken: token,
+            odooAccountName: accountName,
+            odooAccountEmail: accountEmail,
+            enabled: true,
+          },
+          update: {
+            odooToken: token,
+            odooAccountName: accountName,
+            odooAccountEmail: accountEmail,
+          },
+        });
+        if (!responseHeaders) responseHeaders = new Headers();
+        const COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+        responseHeaders.append("Set-Cookie", `odoo_jwt_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${COOKIE_MAX_AGE}`);
+        responseHeaders.append("Set-Cookie", `odoo_account_name=${encodeURIComponent(accountName)}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${COOKIE_MAX_AGE}`);
+        responseHeaders.append("Set-Cookie", `odoo_account_email=${encodeURIComponent(accountEmail)}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${COOKIE_MAX_AGE}`);
+      }
+    } catch (provErr) {
+      console.warn("[App] Auto-provision failed:", provErr?.message);
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   return json({
     shop,

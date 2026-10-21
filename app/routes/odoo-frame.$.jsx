@@ -18,13 +18,13 @@ const ODOO_PREFIXES = [
   "/web", "/shopify", "/mail", "/longpolling",
   "/bus", "/website", "/print_integrator", "/print_integrator_website",
   "/shop", "/odoo", "/discuss", "/product", "/static",
-  "/roseglass_backend", "/tus_product_personalizer", "/shopify_product_designer",
+  "/clay_theme", "/roseglass_backend", "/tus_product_personalizer", "/shopify_product_designer",
   "/shopify_product_designer_cart_extend", "/base",
 ];
 
 const ODOO_PATHS_JSON = JSON.stringify(ODOO_PREFIXES);
 // Regex alternation for HTML rewriting
-const PATH_ALT = "web|shopify|mail|bus|longpolling|website|print_integrator|print_integrator_website|shop|odoo|discuss|product|static|roseglass_backend|tus_product_personalizer|shopify_product_designer|shopify_product_designer_cart_extend|base";
+const PATH_ALT = "web|shopify|mail|bus|longpolling|website|print_integrator|print_integrator_website|shop|odoo|discuss|product|static|clay_theme|roseglass_backend|tus_product_personalizer|shopify_product_designer|shopify_product_designer_cart_extend|base";
 
 // JS injected into HTML — patches fetch/XHR/forms/anchor clicks
 const JS_PATCH = `<script id="__odoo_proxy_patch__">
