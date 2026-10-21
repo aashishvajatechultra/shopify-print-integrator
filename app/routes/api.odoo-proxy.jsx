@@ -7,7 +7,9 @@
 // All other paths: /api/odoo-proxy?path=/web/login  etc.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ODOO_BASE_URL = process.env.ODOO_BASE_URL || "http://161.97.133.248:8099";
+import { getOdooBaseUrl } from "../lib/odooConfig.server.js";
+
+const ODOO_BASE_URL = getOdooBaseUrl();
 
 /**
  * Strip hop-by-hop headers that must not be forwarded.
@@ -54,6 +56,10 @@ function rewriteBody(text, odooOrigin, proxyBase) {
 }
 
 export const loader = async ({ request }) => {
+  if (!ODOO_BASE_URL) {
+    return new Response("ODOO_BASE_URL is not configured", { status: 503 });
+  }
+
   const url = new URL(request.url);
 
   // Build the Odoo target URL: take ?path= and forward all other query params

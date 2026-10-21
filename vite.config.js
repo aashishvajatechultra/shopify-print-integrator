@@ -38,7 +38,7 @@ export default defineConfig({
     hmr: hmrConfig,
     proxy: {
       "/websocket": {
-        target: process.env.ODOO_BASE_URL || "http://161.97.133.248:8099",
+        target: process.env.ODOO_BASE_URL || "http://127.0.0.1:8069",
         ws: true,
         changeOrigin: true,
       },

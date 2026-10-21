@@ -9,9 +9,7 @@
  * Called on every page load from app._index.jsx loader.
  */
 
-const ODOO_DB = process.env.ODOO_DB || "pod_shopify";
-const ODOO_USER = process.env.ODOO_ADMIN_USER || "admin";
-const ODOO_PASS = process.env.ODOO_ADMIN_PASS || "admin";
+import { getOdooXmlRpcAuth } from "./odooConfig.server.js";
 
 /**
  * Normalize a shop domain to plain form (no protocol, no trailing slash).
@@ -123,6 +121,14 @@ function parseXmlRpcBool(text) {
 async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken = "", tokenExpiresAt = null) {
   const base = odooBaseUrl.replace(/\/$/, "");
   const normalized = normalizeDomain(shop);
+  const auth = getOdooXmlRpcAuth();
+  if (!auth) {
+    console.warn(
+      "[TokenSync] XML-RPC fallback skipped — set ODOO_DB, ODOO_ADMIN_USER, ODOO_ADMIN_PASS in env"
+    );
+    return false;
+  }
+  const { db: ODOO_DB, user: ODOO_USER, pass: ODOO_PASS } = auth;
 
   try {
     // Step 1: Authenticate

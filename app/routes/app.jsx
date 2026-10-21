@@ -64,11 +64,10 @@ export const loader = async ({ request }) => {
     responseHeaders.append("Set-Cookie", `odoo_account_email=${encodeURIComponent(accountEmail)}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${COOKIE_MAX_AGE}`);
   }
 
-  const isAuthenticated = !!token;
-  const odooBaseUrl = config?.odooBaseUrl || "http://161.97.133.248:8099";
-
+  // Do not expose Odoo JWT / credentials to the browser loader payload.
+  // Autologin uses HttpOnly cookies + server-side odoo-frame proxy instead.
   return json(
-    { polarisTranslations: enTranslations, isAuthenticated, shop, token, odooBaseUrl },
+    { polarisTranslations: enTranslations, isAuthenticated: !!token, shop },
     responseHeaders ? { headers: responseHeaders } : undefined
   );
 };

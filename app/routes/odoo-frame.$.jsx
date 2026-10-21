@@ -2,7 +2,9 @@
 // Catch-all HTTPS proxy: /odoo-frame/* → Odoo HTTP server
 // Fixes Mixed Content: all Odoo traffic goes Node.js server-side.
 
-const ODOO_ORIGIN = (process.env.ODOO_BASE_URL || "http://161.97.133.248:8099").replace(/\/$/, "");
+import { getOdooBaseUrl } from "../lib/odooConfig.server.js";
+
+const ODOO_ORIGIN = getOdooBaseUrl();
 const PROXY_PREFIX = "/odoo-frame";
 
 const HOP_BY_HOP = new Set([
@@ -233,6 +235,13 @@ const passthroughJs = (js) => js;
 // ─── Core proxy ───────────────────────────────────────────────────────────────
 
 export async function handleProxy(request, splatPath) {
+  if (!ODOO_ORIGIN) {
+    return new Response(
+      "ODOO_BASE_URL is not configured. Set it in the host environment.",
+      { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } }
+    );
+  }
+
   const inUrl = new URL(request.url);
   const odooUrl = ODOO_ORIGIN + "/" + splatPath + inUrl.search;
 

@@ -95,9 +95,20 @@ export const action = async ({ request }) => {
         }
         break;
 
+      // Mandatory GDPR compliance topics — acknowledge 200.
+      // This app does not store customer PII beyond Shopify session/shop config.
       case "CUSTOMERS_DATA_REQUEST":
+        console.log(`[Webhook] GDPR customers/data_request for ${shop} — no customer PII stored`);
+        break;
       case "CUSTOMERS_REDACT":
+        console.log(`[Webhook] GDPR customers/redact for ${shop} — no customer PII stored`);
+        break;
       case "SHOP_REDACT":
+        console.log(`[Webhook] GDPR shop/redact for ${shop} — purging local shop data`);
+        await db.session.deleteMany({ where: { shop } }).catch(() => {});
+        if (db.shopConfig) {
+          await db.shopConfig.deleteMany({ where: { shop } }).catch(() => {});
+        }
         break;
 
       default:

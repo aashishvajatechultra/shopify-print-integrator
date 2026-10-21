@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLoaderData, useActionData, Form, useNavigation, useFetcher } from "@remix-run/react";
 import AnimatedLoader from "../components/AnimatedLoader";
-import { syncShopifyTokenToOdoo } from "../lib/odooTokenSync.server.js";
-
-// Always prefer the env var — fallback to Contabo IP only if env var missing
-const DEFAULT_ODOO_URL = (process.env.ODOO_BASE_URL || "http://161.97.133.248:8099").replace(/\/$/, "");
 
 function readCookie(cookieHeader, name) {
   const match = cookieHeader.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -15,6 +11,9 @@ export const loader = async ({ request }) => {
 
   const { json, redirect } = await import("@remix-run/node");
   const { authenticate, prisma } = await import("../shopify.server.js");
+  const { syncShopifyTokenToOdoo } = await import("../lib/odooTokenSync.server.js");
+  const { getOdooBaseUrl } = await import("../lib/odooConfig.server.js");
+  const DEFAULT_ODOO_URL = getOdooBaseUrl();
   const { session, admin } = await authenticate.admin(request);
   const shop = session.shop;
 
