@@ -133,15 +133,26 @@ async function syncProductToOdoo(shop, payload, mode = "upsert") {
       const shopifyProductId = String(payload.id);
       console.log(`[Webhook] Product deleted in Shopify: ${shopifyProductId} for ${shop}`);
       // Odoo side: mark mapping as inactive via the product-sync endpoint
+      const secret =
+        process.env.SHOPIFY_API_SECRET || process.env.ODOO_PROVISION_SECRET || "";
       await fetch(`${base}/api/shopify/webhook/product-sync`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(secret
+            ? {
+                "X-Print-Integrator-Secret": secret,
+                "X-Shopify-App-Secret": secret,
+              }
+            : {}),
+        },
         body: JSON.stringify({
           shop_domain: shop,
           products: [{
             shopify_product_id: shopifyProductId,
             status: "ARCHIVED",  // Mark as archived so it disappears from active list
           }],
+          secret,
         }),
         signal: AbortSignal.timeout(10000),
       });
@@ -177,12 +188,23 @@ async function syncProductToOdoo(shop, payload, mode = "upsert") {
 
     console.log(`[Webhook] Syncing product "${productData.title}" (${productData.shopify_product_id}) to Odoo for ${shop}`);
 
+    const secret =
+      process.env.SHOPIFY_API_SECRET || process.env.ODOO_PROVISION_SECRET || "";
     const resp = await fetch(`${base}/api/shopify/webhook/product-sync`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(secret
+          ? {
+              "X-Print-Integrator-Secret": secret,
+              "X-Shopify-App-Secret": secret,
+            }
+          : {}),
+      },
       body: JSON.stringify({
         shop_domain: shop,
         products: [productData],
+        secret,
       }),
       signal: AbortSignal.timeout(15000),
     });

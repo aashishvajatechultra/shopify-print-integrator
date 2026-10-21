@@ -23,12 +23,31 @@ function normalizeDomain(shop) {
 }
 
 /**
+ * Convert ISO / Date expiry to Odoo Datetime string (UTC, no timezone suffix).
+ */
+function toOdooDatetime(tokenExpiresAt) {
+  if (!tokenExpiresAt) return null;
+  try {
+    const d = new Date(tokenExpiresAt);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "").slice(0, 19);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Try the custom /api/shopify/store-token endpoint.
  * Returns true on success, false otherwise.
  */
+function appSecret() {
+  return process.env.SHOPIFY_API_SECRET || process.env.ODOO_PROVISION_SECRET || "";
+}
+
 async function tryCustomEndpoint(odooBaseUrl, shop, accessToken, odooToken, refreshToken = "", tokenExpiresAt = null) {
   try {
     const url = `${odooBaseUrl.replace(/\/$/, "")}/api/shopify/store-token`;
+    const secret = appSecret();
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -42,6 +61,9 @@ async function tryCustomEndpoint(odooBaseUrl, shop, accessToken, odooToken, refr
           access_token: accessToken,
           refresh_token: refreshToken || "",
           token_expires_at: tokenExpiresAt || "",
+          api_secret: secret,
+          client_secret: secret,
+          secret,
         },
       }),
       signal: AbortSignal.timeout(5000),
@@ -136,15 +158,22 @@ async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken = 
     );
     let storeId = parseXmlRpcInt(searchText);
 
-    // Step 3: Create tu.store if not found (merchant_id may be required - handle gracefully)
+    // Step 3: Create tu.store if not found (merchant scoped to this shop — never search([], limit=1))
     if (!storeId) {
       console.log(`[TokenSync] tu.store not found, attempting create for: ${normalized}`);
       try {
-        // Resolve or create a merchant to associate with the store
-        const mSearchText = await rpc("tu.merchant", "search", [[[]]], { limit: 1 });
+        const mSearchText = await rpc(
+          "tu.merchant",
+          "search",
+          [[["shopify_account_id", "=", normalized]]],
+          { limit: 1 },
+        );
         let merchantId = parseXmlRpcInt(mSearchText);
         if (!merchantId) {
-          const mCreateText = await rpc("tu.merchant", "create", [{ name: `Merchant (${normalized})`, shopify_account_id: normalized }]);
+          const mCreateText = await rpc("tu.merchant", "create", [{
+            name: `Merchant (${normalized})`,
+            shopify_account_id: normalized,
+          }]);
           merchantId = parseXmlRpcInt(mCreateText);
         }
         const createData = { name: normalized, shopify_url: normalized };
@@ -170,7 +199,8 @@ async function tryXmlRpcFallback(odooBaseUrl, shop, accessToken, refreshToken = 
     // Step 4: Write access_token + refresh_token + expiry to tu.store
     const writeData = { access_token: accessToken };
     if (refreshToken) writeData.refresh_token = refreshToken;
-    if (tokenExpiresAt) writeData.token_expires_at = tokenExpiresAt;
+    const odooExpiry = toOdooDatetime(tokenExpiresAt);
+    if (odooExpiry) writeData.token_expires_at = odooExpiry;
     const writeText = await rpc("tu.store", "write", [[storeId], writeData]);
     if (parseXmlRpcBool(writeText)) {
       console.log(`[TokenSync] ✓ XML-RPC saved token fields to tu.store for: ${normalized}`);

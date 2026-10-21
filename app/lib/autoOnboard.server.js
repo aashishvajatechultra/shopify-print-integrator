@@ -176,6 +176,8 @@ async function fetchAllProducts(shop, accessToken, admin = null, pageSize = 250)
  */
 async function pushProductsToOdoo(odooBaseUrl, shopDomain, products) {
   const url = `${odooBaseUrl.replace(/\/$/, "")}/api/shopify/webhook/product-sync`;
+  const secret =
+    process.env.SHOPIFY_API_SECRET || process.env.ODOO_PROVISION_SECRET || "";
 
   // Push in batches of 25 to avoid large payload timeouts
   const BATCH = 25;
@@ -187,8 +189,20 @@ async function pushProductsToOdoo(odooBaseUrl, shopDomain, products) {
     try {
       const resp = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shop_domain: shopDomain, products: batch }),
+        headers: {
+          "Content-Type": "application/json",
+          ...(secret
+            ? {
+                "X-Print-Integrator-Secret": secret,
+                "X-Shopify-App-Secret": secret,
+              }
+            : {}),
+        },
+        body: JSON.stringify({
+          shop_domain: shopDomain,
+          products: batch,
+          secret,
+        }),
         signal: AbortSignal.timeout(20000),
       });
       const data = await resp.json().catch(() => ({}));
@@ -258,9 +272,27 @@ export async function autoOnboardStore(session, odooBaseUrl, admin = null) {
   const base = odooBaseUrl.replace(/\/$/, "");
   console.log(`[AutoOnboard] Starting onboarding for: ${shop}`);
 
-  // ── Step 0: Persist the fresh token from this session into SQLite ───────────
+  // ── Step 0: Persist token to SQLite + push to Odoo before product sync ─────
   if (accessToken) {
     await persistFreshTokenToSqlite(shop, accessToken);
+    try {
+      const { syncShopifyTokenToOdoo } = await import("./odooTokenSync.server.js");
+      const expiresAt = session.expires
+        ? new Date(session.expires).toISOString()
+        : null;
+      // Fire-and-forget sync; give a brief head-start before product push
+      syncShopifyTokenToOdoo(
+        base,
+        shop,
+        accessToken,
+        "",
+        session.refreshToken || "",
+        expiresAt,
+      );
+      await new Promise((r) => setTimeout(r, 400));
+    } catch (tokenErr) {
+      console.warn(`[AutoOnboard] Token push to Odoo failed: ${tokenErr.message}`);
+    }
   }
   // ────────────────────────────────────────────────────────────────────────────
 
